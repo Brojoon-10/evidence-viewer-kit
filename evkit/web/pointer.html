@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"/><title>근거 화면</title>
+<style>
+html,body{margin:0;height:100%;font:13px/1.45 "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:#6b6b6b}
+body{display:flex;flex-direction:column}
+#top{flex:none;z-index:5;background:#2b2b2b;color:#eee;padding:5px 8px;max-height:40vh;overflow:auto}
+#top select,#top button{font:12px inherit}
+#msg{color:#e8d6ff;font-weight:bold;margin:3px 0}
+#marks{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;padding-bottom:3px}
+#marks a{flex:none;border-radius:10px;padding:1px 10px;cursor:pointer;font-size:14px;font-weight:bold;color:#222;text-decoration:none}
+#marks a.on{outline:2px solid #ffd54a}
+#cur{color:#ffe08a;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hint{color:#aaa;font-size:11px}
+#pages{flex:1;overflow:auto;padding:22px 0 8px 0}
+.pg{position:relative;width:96%;margin:0 auto 10px auto;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.5)}
+.pg img{display:block;width:100%;user-select:none;-webkit-user-drag:none}
+.pg .no{position:absolute;right:4px;top:2px;background:#333;color:#fff;font-size:11px;padding:0 6px;border-radius:3px}
+.box{position:absolute;border:3px solid #7b2fbf;pointer-events:none}
+.box i{position:absolute;left:-3px;top:-24px;color:#222;font-style:normal;font-size:15px;font-weight:bold;padding:1px 7px;border-radius:3px;white-space:nowrap}
+.box.flash{animation:fl 1.1s ease-in-out 3}
+@keyframes fl{50%{filter:brightness(.8)}}
+/* 같은 문단을 여러 줄이 가리켜 상자가 겹칠 때: 지금 보는 줄 상자만 진하게 맨 위 */
+.box.dim{opacity:.28}.box.dim i{display:none}
+.box.focus{z-index:4;border-width:4px}
+.ubox{position:absolute;border:2px dashed #ff7a00;background:rgba(255,122,0,.08);pointer-events:none}
+.ubox i{position:absolute;right:-2px;bottom:-20px;background:#ff7a00;color:#fff;font-style:normal;font-size:12px;padding:0 5px;border-radius:3px;white-space:nowrap}
+.drag{position:absolute;border:2px dashed #ff7a00;pointer-events:none}
+#modes button{background:#444;color:#ddd;border:1px solid #666;border-radius:4px;padding:1px 8px;cursor:pointer}
+#modes button.on{background:#ffd54a;color:#222;border-color:#ffd54a;font-weight:bold}
+</style></head><body>
+<div id="top">
+  <span id="modes"><button id="m-group" title="초안에서 누른 줄이 속한 묶음의 근거">고른 묶음</button> <button id="m-agent" title="에이전트(또는 point 명령)가 찍은 근거">에이전트 커서</button></span>
+  <select id="doc"></select>
+  <select id="hist"><option value="">저장된 근거 기록…</option></select>
+  <button id="uclear" title="내가 그린 주황 상자 모두 지우기">내 표시 지우기</button>
+  <span id="hint">Shift+끌기: 내가 가리키기(에이전트가 읽음)</span>
+  <div id="msg"></div>
+  <div id="marks"></div>
+  <div id="cur"></div>
+</div>
+<div id="pages"></div>
+<script>
+var STATIC=!!(window.parent&&window.parent.__VSTATE&&window.parent.__VSTATE.pages);
+var docs=null, cur=null, seq=-1, ptr={marks:[]}, cptr={marks:[]}, gptr={marks:[]}, mode="agent", selSeq=null, umarks=[], docsVer=null;
+var PAL=["#f2a7a7","#9fd6a8","#9fc3ef","#f6c08f","#c9b2ee","#8fd3cb","#f1afd6","#d9c09a","#e7b0b0","#aab6e8","#d3d48c","#f0d080"];
+function col(n){return PAL[(n-1)%PAL.length];}
+function $(id){return document.getElementById(id);}
+function get(k,d){try{var v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}}
+function set(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function keyOf(m){var r=/^\[([\w.-]+)\]/.exec(m.note||"");return r?r[1]:null;}
+// 번호: 같은 키는 같은 번호(묶음 안에서 근거가 있는 줄만 위에서부터), 한 키에 상자가 여럿이면 -1,-2
+var DISP={},SUB={};
+function number(){DISP={};SUB={};var km={},c=0,cnt={},seen={};
+  ptr.marks.forEach(function(m){var k=keyOf(m)||"_"+m.n;if(!km[k]){km[k]=++c;}DISP[m.n]=km[k];cnt[k]=(cnt[k]||0)+1;});
+  ptr.marks.forEach(function(m){var k=keyOf(m)||"_"+m.n;if(cnt[k]>1){seen[k]=(seen[k]||0)+1;SUB[m.n]=seen[k];}});}
+function disp(m){return DISP[m.n]||m.n;}
+function lab(m){return (mode==="group"?"근거 ":"#")+disp(m)+(SUB[m.n]?"-"+SUB[m.n]:"");}
+function fp(doc,page){var d=docs[doc];return d.map?d.map[String(page)]:page;}
+function op(doc,n){var d=docs[doc];if(!d.map)return n;for(var k in d.map){if(d.map[k]===n)return Number(k);}return n;}
+function clip(doc,n){return docs[doc].clips[n-1];}
+function place(b,doc,n,r){var c=clip(doc,n),w=c[2]-c[0],h=c[3]-c[1];
+  b.style.left=((r[0]-c[0])/w*100)+"%";b.style.top=((r[1]-c[1])/h*100)+"%";
+  b.style.width=((r[2]-r[0])/w*100)+"%";b.style.height=((r[3]-r[1])/h*100)+"%";}
+function src(doc,n){return STATIC?((window.parent.__VSTATE.pages[doc]||[])[n-1]||""):"/page/"+doc+"/"+n+".png?v="+encodeURIComponent(docs[doc].stamp||"");}
+function showDoc(doc){
+  if(!docs[doc])doc=Object.keys(docs)[0]; if(cur===doc)return; cur=doc; $("doc").value=doc;
+  var d=docs[doc], box=$("pages"); box.innerHTML="";
+  for(var n=1;n<=d.pages;n++){var pg=document.createElement("div");pg.className="pg";pg.id="p"+n;pg.dataset.n=n;
+    var im=document.createElement("img");im.src=src(doc,n);pg.appendChild(im);
+    var no=document.createElement("span");no.className="no";no.textContent=op(doc,n)+(d.unit||"");pg.appendChild(no);
+    box.appendChild(pg);}
+  overlays();
+}
+function overlays(){
+  [].slice.call(document.querySelectorAll(".box,.ubox")).forEach(function(b){b.remove();});
+  ptr.marks.forEach(function(m){ if(m.doc!==cur)return; var n=m.filepage||fp(m.doc,m.page), pg=$("p"+n); if(!pg||!m.rects)return;
+    m.rects.forEach(function(r,k){var b=document.createElement("div");b.className="box flash";b.dataset.n=m.n;place(b,m.doc,n,r);
+      var c=col(disp(m)); b.style.borderColor=c; b.style.background=c+"22";
+      if(k===0){var i=document.createElement("i");i.textContent=lab(m);i.style.background=c;b.appendChild(i);} pg.appendChild(b);});});
+  umarks.forEach(function(u){ if(u.doc!==cur)return; var pg=$("p"+u.filepage); if(!pg)return;
+    var b=document.createElement("div");b.className="ubox";place(b,u.doc,u.filepage,u.rect);
+    var i=document.createElement("i");i.textContent="사람"+u.id+(u.note?" · "+u.note:"");b.appendChild(i);pg.appendChild(b);});
+}
+function jump(m,quiet){
+  showDoc(m.doc); var n=m.filepage||fp(m.doc,m.page), pg=$("p"+n); if(!pg)return;
+  var go=function(){var y=pg.offsetTop; if(m.rects){var c=clip(m.doc,n);y+=pg.offsetHeight*(m.rects[0][1]-c[1])/(c[3]-c[1]);}
+    var P=$("pages"); P.scrollTop=Math.max(0,y-Math.max(180,P.clientHeight*0.3));};
+  go(); setTimeout(go,400); setTimeout(go,1200);
+  [].slice.call(document.querySelectorAll("#marks a")).forEach(function(a){a.classList.toggle("on",a.dataset.n==m.n);});
+  var fk=keyOf(m), same={}; ptr.marks.forEach(function(x){ if(keyOf(x)===fk){same[x.n]=1;} });
+  [].slice.call(document.querySelectorAll(".box")).forEach(function(b){var f=!!same[b.dataset.n];b.classList.toggle("focus",f);b.classList.toggle("dim",!f);});
+  var d=docs[m.doc]; $("cur").textContent=lab(m)+" · "+(d?d.name:m.doc)+" "+m.page+(d&&d.unit?d.unit:"")+(m.note?" · "+m.note.replace(/^\[[\w.-]+\]\s*/,""):"");
+  var k=keyOf(m); if(k&&!quiet){try{parent.postMessage({type:"ptr",key:k},"*");}catch(e){}}
+}
+function render(){
+  $("msg").textContent=ptr.msg||"";
+  var mk=$("marks"); mk.innerHTML=""; number();
+  ptr.marks.forEach(function(m){var a=document.createElement("a");a.dataset.n=m.n;a.textContent=lab(m);a.style.background=col(disp(m));
+    var d=docs[m.doc]; a.title=(d?d.name:m.doc)+" "+m.page+(d&&d.unit?d.unit:"")+(m.note?" · "+m.note:""); a.onclick=function(){jump(m);}; mk.appendChild(a);});
+  overlays();
+}
+function setMode(m){mode=m; ptr=(m==="group")?gptr:cptr; $("m-group").classList.toggle("on",m==="group"); $("m-agent").classList.toggle("on",m==="agent"); render();}
+function postMode(m){fetch("/api/mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:m})});}
+$("m-group").onclick=function(){postMode("group");};   // 서버(또는 단일 파일의 부모)를 거쳐 초안·근거 화면이 함께 바뀜
+$("m-agent").onclick=function(){postMode("agent");};
+window.addEventListener("message",function(e){ if(e.data&&e.data.type==="draft"){ var m=ptr.marks.filter(function(x){return keyOf(x)===e.data.key;})[0]; if(m){jump(m,true);} } });
+function loadGroup(sel){
+  fetch("/api/evidence?t="+Date.now()).then(function(r){return r.json();}).then(function(ev){
+    var marks=[], miss=[];
+    (sel.keys||[]).forEach(function(k){var ms=ev.keys[k]||[]; if(!ms.length){miss.push(k);}
+      ms.forEach(function(m){var c={};for(var a in m){c[a]=m[a];} c.n=marks.length+1; marks.push(c);});});
+    gptr={marks:marks,msg:"묶음 "+(sel.label||"")+" · 줄 "+(sel.keys||[]).length+"개, 근거 "+marks.length+"곳"+(miss.length?" · 근거 없음: "+miss.join(", "):"")};
+    setMode("group"); var first=marks.filter(function(m){return keyOf(m)===sel.key;})[0]||marks[0]; if(first){jump(first,true);}
+  }).catch(function(){});
+}
+function poll(){
+  fetch("/api/state?t="+Date.now()).then(function(r){return r.json();}).then(function(s){
+    if(docsVer!==null&&s.docs_ver&&s.docs_ver!==docsVer){location.reload();return;} docsVer=s.docs_ver||docsVer;
+    var p=s.pointer||{marks:[]}, sel=s.select||{seq:0};
+    var u=(s.user&&s.user.marks)||[]; if(JSON.stringify(u)!==JSON.stringify(umarks)){umarks=u;overlays();}
+    // 보기 전환(초안 화면과 같은 규칙): 새로 찍히면 에이전트 커서, 초안에서 줄을 누르면 묶음, 버튼은 /api/mode
+    if(p.seq!==seq){var first=(seq===-1); seq=p.seq; cptr=p; setMode("agent"); if(cptr.marks.length){jump(cptr.marks[0],first);}}
+    if(selSeq===null){selSeq=sel.seq;}
+    else if(sel.seq!==selSeq){selSeq=sel.seq; if(sel.mode==="agent"){setMode("agent"); if(cptr.marks.length){jump(cptr.marks[0],true);}} else {loadGroup(sel);}}
+  }).catch(function(){});
+}
+// 저장된 근거 기록 고르기
+$("hist").onchange=function(){var v=$("hist").value; if(v==="")return;
+  fetch("/api/histories?t="+Date.now()).then(function(r){return r.json();}).then(function(H){var h=H[+v]; if(!h)return;
+    cptr={marks:h.marks,msg:"저장된 근거: "+h.name+(h.msg?" · "+h.msg:"")}; setMode("agent"); if(cptr.marks.length){jump(cptr.marks[0],true);} $("hist").value="";});};
+// Shift+끌기로 사람이 가리키기 → /api/user (에이전트는 `python -m evkit.point --show-user` 로 읽음)
+(function(){var st=null,dv=null,pg=null;
+  document.addEventListener("mousedown",function(e){if(!e.shiftKey||STATIC)return; pg=e.target.closest(".pg"); if(!pg)return; e.preventDefault();
+    var r=pg.getBoundingClientRect(); st=[e.clientX-r.left,e.clientY-r.top]; dv=document.createElement("div");dv.className="drag";pg.appendChild(dv);});
+  document.addEventListener("mousemove",function(e){if(!st)return; var r=pg.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+    dv.style.left=Math.min(x,st[0])+"px";dv.style.top=Math.min(y,st[1])+"px";dv.style.width=Math.abs(x-st[0])+"px";dv.style.height=Math.abs(y-st[1])+"px";});
+  document.addEventListener("mouseup",function(e){if(!st)return; var r=pg.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, n=+pg.dataset.n, c=clip(cur,n);
+    var fx=function(v){return c[0]+(c[2]-c[0])*v/r.width;}, fy=function(v){return c[1]+(c[3]-c[1])*v/r.height;};
+    var rect=[fx(Math.min(x,st[0])),fy(Math.min(y,st[1])),fx(Math.max(x,st[0])),fy(Math.max(y,st[1]))]; dv.remove(); st=null;
+    if(rect[2]-rect[0]<4||rect[3]-rect[1]<4)return; var note=prompt("메모(선택)","")||"";
+    fetch("/api/user",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"mark",doc:cur,filepage:n,rect:rect,note:note})});});
+  $("uclear").onclick=function(){fetch("/api/user",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"clear"})});};
+  if(STATIC){$("uclear").style.display="none";$("hint").style.display="none";}})();
+fetch("/api/docs?t="+Date.now()).then(function(r){return r.json();}).then(function(d){
+  docs=d.docs; Object.keys(docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=docs[k].name;$("doc").appendChild(o);});
+  $("doc").onchange=function(){showDoc($("doc").value);};
+  fetch("/api/histories?t="+Date.now()).then(function(r){return r.json();}).then(function(H){H.forEach(function(h,i){var o=document.createElement("option");o.value=i;o.textContent=h.name+" ("+h.marks.length+"곳)";$("hist").appendChild(o);});}).catch(function(){});
+  showDoc(get("evk-doc","")||Object.keys(docs)[0]); poll(); setInterval(poll,1000);
+});
+window.addEventListener("beforeunload",function(){if(cur){set("evk-doc",cur);}});
+</script></body></html>

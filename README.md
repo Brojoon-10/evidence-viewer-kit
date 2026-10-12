@@ -1,0 +1,184 @@
+# evidence-viewer-kit
+
+> **EN** — A small toolkit for writing documents where **every line is backed by a source location** (PDF · page · box).
+> Write a draft in Markdown, tag lines with `{@key}`, point at the evidence in source PDFs with one command, and review it side by side:
+> click a line → its evidence boxes light up in the PDF. Works live (local server, human + AI agent looking at the same screen)
+> or as a **single self-contained HTML file** you can hand to a reviewer. The agent works inside the apps the user already has open
+> (Office/HWP via COM, browser via CDP) so the user watches every change and can step in. Python 3.10+, PyMuPDF, Pillow.
+
+문서 초안의 **한 줄 한 줄을 원문 근거(PDF · 쪽 · 상자)에 연결**해서 쓰고 검토하는 도구 모음입니다.
+보고서, 제안서, 논문 정리, 규정 검토, 회의록 정리처럼 "이 문장 어디서 나왔어?"가 중요한 작업에 쓰라고 만들었습니다.
+사람과 AI 에이전트가 같은 화면을 보며 근거를 찍고 고치는 방식에 맞춰져 있습니다.
+
+![작업 화면: 왼쪽 초안, 오른쪽 근거](docs/screenshot.png)
+
+- **실시간 모드**: 로컬 서버를 켜면 왼쪽에 초안 미리보기, 오른쪽에 근거 화면이 뜹니다. 에이전트(또는 사람)가 명령 한 줄로 근거 위치를 찍으면 오른쪽이 그 자리로 이동하고, 초안의 해당 줄에 같은 번호가 붙습니다.
+- **단일 파일 모드**: 지금 상태를 HTML 파일 **하나**로 묶습니다. 받는 사람은 서버 없이 더블클릭으로 열어 줄을 누르며 근거를 확인합니다.
+- **지켜보며 같이 일하기**: 에이전트가 사용자가 이미 열어 둔 앱 안에서 일합니다. 한글·엑셀·파워포인트는 **COM**, 브라우저는 **CDP**를 씁니다. 사용자는 바뀌는 자리를 실시간으로 보며 바로 끼어듭니다 → [docs/WORKFLOW_TIPS.md](docs/WORKFLOW_TIPS.md)
+
+---
+
+## 1. 빠른 시작 (데모)
+
+```bash
+pip install -r requirements.txt
+python examples/demo/make_demo.py                     # 가상 근거 PDF 2개 + 근거 기록 생성
+python -m evkit.serve --project examples/demo          # → http://127.0.0.1:8765/
+python -m evkit.build_viewer --project examples/demo   # → examples/demo/.evkit/dist/*.html (단일 파일)
+```
+
+데모 화면에서 해 볼 것
+1. 왼쪽 초안의 줄을 누르면 → 그 줄이 속한 **묶음(○ 항목)** 의 근거가 오른쪽에 모이고, 줄 옆에 `근거 1, 2, …` 번호가 붙습니다.
+2. 오른쪽 위 번호를 누르면 → 그 상자로 이동하고 왼쪽 초안의 해당 줄이 강조됩니다.
+3. 오른쪽 PDF 위에서 **Shift+끌기** → 주황 상자로 "여기"를 표시합니다. 에이전트는 `python -m evkit.point --project … --show-user` 로 그 글과 잘라낸 그림을 읽습니다.
+4. 다른 터미널에서 근거를 찍어 보기:
+   ```bash
+   python -m evkit.point --project examples/demo --msg "폭 기준" "guide|1|para=3.2 Width|[g3-1] 폭 1.8 m 기준"
+   ```
+
+## 2. 내 작업에 쓰기
+
+```
+my-project/
+├─ project.json          설정 (아래)
+├─ docs/                 근거 PDF (보고서·논문·회의자료… PDF가 아니면 PDF로 내보내서)
+├─ drafts/report.md      초안
+└─ .evkit/               자동 생성: 근거 기록·캐시·단일 파일 결과 (git 에 올리지 말 것)
+```
+
+**project.json**
+```json
+{
+  "title": "프로젝트 이름",
+  "docs": {
+    "spec":  {"name": "사양서 v2", "path": "docs/spec.pdf", "unit": "쪽"},
+    "notes": {"name": "회의록 3월", "path": "docs/notes_0312.pdf", "first_page": 7}
+  },
+  "drafts": [{"label": "보고서 초안", "file": "drafts/report.md"}],
+  "state_dir": ".evkit",
+  "port": 8765,
+  "page_dpi": 150,
+  "skip_line_regex": "^- \\d+ -$",
+  "math": false
+}
+```
+
+| 항목 | 뜻 |
+|---|---|
+| `docs.<키>` | 근거 문서. 키는 짧게(`spec`, `notes`, `ref1` …). 명령과 기록에서 이 키로 부름 |
+| `first_page` | 원본에서 일부 쪽만 뽑은 PDF일 때 PDF 1쪽의 원래 쪽 번호. 명령의 쪽 번호는 **원래 쪽 번호**로 씀 |
+| `crop` | (선택) 모든 쪽에서 잘라 보일 범위 `[x0,y0,x1,y1]` (pt) |
+| `skip_line_regex` | 쪽 번호·머리말처럼 상자 계산에서 뺄 줄 |
+| `math` | 초안의 `$수식$` 을 MathJax(CDN)로 표시 |
+
+`--project` 대신 환경변수 `EVKIT_PROJECT` 를 쓰거나, project.json 이 있는 폴더에서 실행해도 됩니다.
+
+## 3. 초안 문법
+
+```markdown
+# 제목
+## 1. 절
+○ 큰 항목 (여기부터 다음 ○ 또는 제목 전까지가 '묶음')
+ - 중간 항목 {@k1}
+  · 작은 항목 {@k1-a}
+문단도 됩니다 {@k2}
+| 표 | 칸 |
+|---|---|
+| 값 {@t1} | 값 |
+![그림 캡션](figures/a.png)
+**굵게** {red}빨강{/red} {chg}초록(수정 표시){/chg} {todo}노랑(확인 필요){/todo}
+<!-- 주석: 미리보기에 안 보임 -->
+```
+
+- 줄 끝 `{@키}` 가 **초안 키** 입니다. 근거 기록의 메모 `"[키] …"` 와 이어집니다.
+- 키는 자유롭게 짓되 **줄마다 하나, 나중에 바꾸지 않게** 붙이세요(바꾸면 근거 연결이 끊김). 예: `y3-a1-2`, `s2.3-p1`.
+- 묶음은 `○`(또는 `■`, `□`) 줄과 제목(`#`~`###`)이 시작합니다.
+
+## 4. 근거 찍기 (`evkit.point`)
+
+```bash
+python -m evkit.point --project P --msg "설명" "문서키|쪽|위치|[초안키] 메모" ...
+```
+
+| 위치 | 잡히는 범위 |
+|---|---|
+| `find=글자` | 그 글자가 있는 **줄 전체**. `find=A;;B` 는 A·B 줄을 한 상자로 |
+| `para=글자` | 그 글자가 있는 **문단 전체** |
+| `sec=제목글자` | 그 제목부터 같은 단계 다음 제목 전까지 |
+| `fig=캡션글자` | 캡션 위 그림 + 캡션 (벡터 그림도 인식) |
+| `after=글자` / `before=글자` | 그 줄 바로 아래/위 그림·수식 |
+| `word=글자` | 글자 조각만(숫자 하나 콕 집을 때) |
+| `box=x0,y0,x1,y1` | 쪽을 0~1로 본 비율 좌표 |
+| `page` | 쪽 전체 |
+
+- `--check` 를 붙이면 `.evkit/check/mark_N.png` 에 상자를 그린 확인 그림이 생깁니다. **상자가 글자 조각만 잡히거나 엉뚱한 곳이면 고쳐서 다시 찍습니다.**
+- `--clear` 지우기, `--show-user` 사람이 그린 주황 상자 읽기.
+- 한 줄(키)에 상자를 여러 개 찍어도 됩니다. 번호는 `#3-1`, `#3-2` 처럼 붙습니다.
+
+## 5. 근거 저장·다시 보기 (`evkit.pointer_log`)
+
+```bash
+python -m evkit.pointer_log --project P save 2장_가묶음      # .evkit/history/2장_가묶음.json + .evkit/evidence_log.md
+python -m evkit.pointer_log --project P show 2장_가묶음      # 다시 띄우기
+python -m evkit.pointer_log --project P list
+```
+
+- 묶음 보기(초안에서 줄 클릭)는 **저장된 기록 전체**에서 그 묶음의 키를 모읍니다. 같은 키가 여러 기록에 있으면 **가장 최근 저장분**을 씁니다.
+- 그래서 작업 흐름은 "한 묶음 근거 찍기 → 사람이 확인 → `save`" 를 묶음마다 반복하는 것입니다.
+
+## 6. 화면의 두 가지 보기
+
+| 보기 | 언제 | 번호 |
+|---|---|---|
+| **에이전트 커서** | `point` 로 새로 찍었을 때(자동 전환) | `#1, #2 …` 찍은 순서(키 기준) |
+| **고른 묶음** | 사람이 초안에서 줄을 눌렀을 때 | `근거 1, 2 …` 묶음 안에서 **근거가 있는 줄만** 위에서부터 |
+
+초안 화면과 근거 화면은 같은 규칙으로 번호를 매기고, 보기 전환은 서버 한 곳(`/api/mode`)에서 정해 두 화면이 함께 바뀝니다. 같은 문단을 여러 줄이 가리켜 상자가 겹치면 지금 보는 줄의 상자만 진하게 맨 위로 올립니다.
+
+## 7. 단일 파일 (`evkit.build_viewer`)
+
+```bash
+python -m evkit.build_viewer --project P [--out 경로.html] [--dpi 96] [--quality 60]
+```
+
+- 근거 문서의 모든 쪽을 JPEG로 넣고, 화면 코드는 실시간판을 그대로 씁니다(`web/shim.js` 가 서버 응답을 대신함).
+- 크기 가늠: 96 dpi·품질 60에서 A4 한 쪽 ≈ 100~150 KB. 300쪽이면 40 MB 안팎. 줄이려면 `--dpi`·`--quality` 를 낮추거나 쓰지 않는 문서를 `docs` 에서 빼세요.
+- 스냅샷입니다. 초안이 바뀌면 다시 빌드하세요.
+- 수식(`math: true`)은 MathJax CDN을 쓰므로 받는 쪽에 인터넷이 필요합니다.
+
+## 8. 사람과 에이전트가 같이 쓰는 방법
+
+에이전트(Claude, Codex 등)에게 [AGENTS.md](AGENTS.md) 를 읽히세요. 요약하면:
+
+1. **원문 문장을 그대로 쓴다.** 에이전트가 새 문장·소제목·표를 만들지 않는다. 꼭 필요한 연결 문장은 표시해 둔다.
+2. **세부 하나까지 근거.** 숫자·기한·상태("진행 중") 같은 세부도 각각 원문 위치에 연결한다.
+3. **말할 때마다 커서를 옮긴다.** 문서 내용을 언급하는 답에는 묻지 않고 `point` 로 그 위치를 찍는다.
+4. **결정은 사람이.** 질문을 결정으로 받아 기록하지 않는다. 결정이 나면 결정 기록에 근거 위치를 같이 적는다.
+5. **묶음 단위로 확인하고 저장한다.**
+
+## 9. 그 밖의 문서
+
+- [AGENTS.md](AGENTS.md) — 에이전트 작업 규칙과 명령 요약(에이전트에게 그대로 주면 됨)
+- [docs/WORKFLOW_TIPS.md](docs/WORKFLOW_TIPS.md) — 작업 방식 팁: 사람이 보는 앱을 에이전트가 직접 다루기(오피스·한글은 **COM**, 브라우저는 **CDP**/헤드리스 Chrome), 결과를 "보이는 모양"으로 확인하기
+- [docs/HWP_COM_NOTES.md](docs/HWP_COM_NOTES.md) — 한글(HWP)·엑셀을 COM으로 자동화할 때 겪은 함정과 해결(Windows)
+- [docs/DATA_FORMATS.md](docs/DATA_FORMATS.md) — 근거 기록·상태 파일·API 형식
+
+## 10. 보안·배포 주의
+
+- 서버는 `127.0.0.1` 에서만 열립니다. 프로젝트 폴더 밖 파일은 내주지 않습니다.
+- **단일 파일에는 근거 문서의 쪽 그림이 통째로 들어갑니다.** 내부 자료라면 받을 사람을 정해서 직접 전달하고, 공개 호스팅에 올리지 마세요.
+- 이 저장소에는 도구만 올립니다. 내 프로젝트의 `docs/`, `drafts/`, `.evkit/` 은 올리지 마세요(`.gitignore` 참고).
+
+## 11. 문제 해결
+
+| 증상 | 조치 |
+|---|---|
+| 상자가 쪽 전체로 잡힘("글자를 찾지 못해…") | 원문 글자를 그대로(띄어쓰기 포함) 짧게 다시. 줄바꿈에 걸친 글은 한 줄에 있는 부분만 |
+| 상자가 너무 넓음 | `find` 대신 `word`, 또는 더 특정한 글자. 같은 글이 여러 줄에 있으면 그 줄에만 있는 글자로 |
+| 그림이 안 잡힘 | `fig=캡션` 또는 `before=캡션`. 그래도 안 되면 `box=` |
+| 초안·근거 번호가 다름 | 두 화면을 새로고침. 보기 전환은 버튼(서버)을 거쳐야 함 |
+| 단일 파일 오른쪽이 빔 | 브라우저 콘솔 확인. 문서가 너무 크면 `--dpi` 를 낮춰 다시 빌드 |
+
+## License
+
+MIT — [LICENSE](LICENSE)

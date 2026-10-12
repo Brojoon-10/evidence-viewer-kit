@@ -1,0 +1,12 @@
+{
+  "title": "Demo: Bike Lane Pilot",
+  "docs": {
+    "survey": {"name": "Field Survey Report (sample)", "path": "docs/survey.pdf", "unit": " p"},
+    "guide": {"name": "Street Design Guide (sample)", "path": "docs/guide.pdf", "unit": " p"}
+  },
+  "drafts": [{"label": "Summary draft", "file": "drafts/summary.md"}],
+  "state_dir": ".evkit",
+  "port": 8765,
+  "page_dpi": 150,
+  "skip_line_regex": "^- \\d+ -$"
+}

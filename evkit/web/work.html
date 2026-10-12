@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"/><title>근거 작업 화면</title>
+<style>
+html,body{margin:0;height:100%;background:#555;font:12px/1.4 "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+#wrap{display:grid;grid-template-columns:1fr 6px 1fr;height:100vh}
+#left,#right{display:flex;flex-direction:column;min-width:0}
+iframe{border:0;flex:1;width:100%;background:#8a8a8a}
+#split{background:#222;cursor:col-resize}
+.bar{background:#2b2b2b;color:#eee;padding:4px 8px;display:flex;gap:8px;align-items:center;height:22px}
+.bar select,.bar input,.bar button{font:12px inherit}
+.bar input{width:52px}
+.dim{color:#aaa}
+</style></head><body>
+<div id="wrap">
+ <div id="left"><div class="bar"><select id="lsel"></select><span class="dim">초안</span></div><iframe id="fl"></iframe></div>
+ <div id="split"></div>
+ <div id="right"><div class="bar"><select id="rsel"><option value="ptr">근거 화면(커서 따라가기)</option></select>
+   <span>쪽</span><input id="pg" type="number" min="1"/><button id="go">PDF로 보기</button></div><iframe id="fr"></iframe></div>
+</div>
+<script>
+function get(k,d){try{var v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}}
+function set(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+var fl=document.getElementById("fl"),fr=document.getElementById("fr"),lsel=document.getElementById("lsel"),rsel=document.getElementById("rsel"),pg=document.getElementById("pg");
+fetch("/api/drafts").then(function(r){return r.json();}).then(function(ds){
+  ds.forEach(function(d){var o=document.createElement("option");o.value=d.i;o.textContent=d.label;lsel.appendChild(o);});
+  lsel.value=get("evk-left","0"); if(!lsel.value){lsel.value="0";} fl.src="/preview?d="+lsel.value;
+  lsel.onchange=function(){fl.src="/preview?d="+lsel.value;set("evk-left",lsel.value);};});
+fetch("/api/docs").then(function(r){return r.json();}).then(function(d){
+  document.title=d.title+" · 근거 작업 화면";
+  Object.keys(d.docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=d.docs[k].name+" (원본 PDF)";rsel.appendChild(o);});
+  function show(){fr.src=rsel.value==="ptr"?"/pointer":"/doc/"+rsel.value+".pdf#page="+(parseInt(pg.value,10)||1);}
+  rsel.onchange=show; document.getElementById("go").onclick=show; show();});
+// 왼쪽(초안) ↔ 오른쪽(근거) 클릭 알림 전달
+window.addEventListener("message",function(e){
+  if(e.data&&e.data.type==="ptr"&&e.source===fr.contentWindow){fl.contentWindow.postMessage(e.data,"*");}
+  if(e.data&&e.data.type==="draft"&&e.source===fl.contentWindow){fr.contentWindow.postMessage(e.data,"*");}});
+var sp=document.getElementById("split"),wrap=document.getElementById("wrap"),drag=false;
+sp.addEventListener("mousedown",function(){drag=true;document.body.style.userSelect="none";fr.style.pointerEvents="none";fl.style.pointerEvents="none";});
+window.addEventListener("mouseup",function(){drag=false;document.body.style.userSelect="";fr.style.pointerEvents="";fl.style.pointerEvents="";});
+window.addEventListener("mousemove",function(e){if(!drag)return;var r=e.clientX/window.innerWidth*100;r=Math.max(20,Math.min(80,r));wrap.style.gridTemplateColumns=r+"% 6px "+(100-r)+"%";set("evk-split",r);});
+var r0=get("evk-split",null);if(r0){wrap.style.gridTemplateColumns=r0+"% 6px "+(100-r0)+"%";}
+</script></body></html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>__TITLE__</title>
+<style>
+html,body{margin:0;height:100%;background:#555;font:12px/1.4 "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+#wrap{display:grid;grid-template-columns:1fr 6px 1fr;height:100vh}
+#left,#right{display:flex;flex-direction:column;min-width:0}
+iframe{border:0;flex:1;width:100%;background:#8a8a8a}
+#split{background:#222;cursor:col-resize}
+.bar{background:#2b2b2b;color:#eee;padding:4px 8px;display:flex;gap:10px;align-items:center;height:22px}
+.bar select{font:12px inherit}
+.dim{color:#aaa}
+</style></head><body>
+<div id="wrap">
+ <div id="left"><div class="bar"><select id="lsel"></select>
+  <span class="dim">줄을 누르면 그 묶음의 근거가 오른쪽에 뜹니다 · 스냅샷 __TIME__</span></div><iframe id="fl"></iframe></div>
+ <div id="split"></div>
+ <div id="right"><div class="bar"><b>근거 화면</b></div><iframe id="fr"></iframe></div>
+</div>
+<script type="application/json" id="d-state">__STATE__</script>
+<script type="application/json" id="d-left">__LEFT__</script>
+<script type="application/json" id="d-po">__POINTER__</script>
+<script>
+// 부모 페이지가 서버 역할: 데이터는 __VSTATE 에, 각 화면(srcdoc iframe)의 shim 이 여기서 읽고 쓴다
+function J(id){return JSON.parse(document.getElementById(id).textContent);}
+window.__VSTATE=J("d-state"); window.__VSTATE.select={seq:0};
+var LEFT=J("d-left"),fl=document.getElementById("fl"),fr=document.getElementById("fr"),lsel=document.getElementById("lsel");
+LEFT.forEach(function(p,i){var o=document.createElement("option");o.value=i;o.textContent=p.label;lsel.appendChild(o);});
+fr.srcdoc=J("d-po"); fl.srcdoc=LEFT[0].html;
+lsel.onchange=function(){fl.srcdoc=LEFT[+lsel.value].html;};
+window.addEventListener("message",function(e){
+  if(e.data&&e.data.type==="ptr"&&e.source===fr.contentWindow){fl.contentWindow.postMessage(e.data,"*");}
+  if(e.data&&e.data.type==="draft"&&e.source===fl.contentWindow){fr.contentWindow.postMessage(e.data,"*");}});
+var sp=document.getElementById("split"),wrap=document.getElementById("wrap"),drag=false;
+sp.addEventListener("mousedown",function(){drag=true;document.body.style.userSelect="none";fr.style.pointerEvents="none";fl.style.pointerEvents="none";});
+window.addEventListener("mouseup",function(){drag=false;document.body.style.userSelect="";fr.style.pointerEvents="";fl.style.pointerEvents="";});
+window.addEventListener("mousemove",function(e){if(!drag)return;var r=e.clientX/window.innerWidth*100;r=Math.max(20,Math.min(80,r));wrap.style.gridTemplateColumns=r+"% 6px "+(100-r)+"%";});
+</script></body></html>
