@@ -1,60 +1,59 @@
 # evidence-viewer-kit
 
-> **EN** — A small toolkit for writing documents where **every line is backed by a source location** (PDF · page · box).
-> Write a draft in Markdown, tag lines with `{@key}`, point at the evidence in source PDFs with one command, and review it side by side:
-> click a line → its evidence boxes light up in the PDF. Works live (local server, human + AI agent looking at the same screen)
-> or as a **single self-contained HTML file** you can hand to a reviewer. The agent works inside the apps the user already has open
-> (Office/HWP via COM, browser via CDP) so the user watches every change and can step in. Python 3.10+, PyMuPDF, Pillow.
+**English** | [한국어](README.ko.md)
 
-문서 초안의 **한 줄 한 줄을 원문 근거(PDF · 쪽 · 상자)에 연결**해서 쓰고 검토하는 도구 모음입니다.
-보고서, 제안서, 논문 정리, 규정 검토, 회의록 정리처럼 "이 문장 어디서 나왔어?"가 중요한 작업에 쓰라고 만들었습니다.
-사람과 AI 에이전트가 같은 화면을 보며 근거를 찍고 고치는 방식에 맞춰져 있습니다.
+A small toolkit for writing and reviewing documents where **every line of the draft is linked to its source** (PDF · page · box).
+It is made for work where "where did this sentence come from?" matters: reports, proposals, literature notes, regulation reviews, meeting summaries.
+It is built around a user and an AI agent looking at the same screen while they place and fix evidence together.
 
-![작업 화면: 왼쪽 초안, 오른쪽 근거](docs/screenshot.png)
+![Work screen: draft on the left, evidence on the right](docs/screenshot.png)
 
-- **실시간 모드**: 로컬 서버를 켜면 왼쪽에 초안 미리보기, 오른쪽에 근거 화면이 뜹니다. 에이전트(또는 사람)가 명령 한 줄로 근거 위치를 찍으면 오른쪽이 그 자리로 이동하고, 초안의 해당 줄에 같은 번호가 붙습니다.
-- **단일 파일 모드**: 지금 상태를 HTML 파일 **하나**로 묶습니다. 받는 사람은 서버 없이 더블클릭으로 열어 줄을 누르며 근거를 확인합니다.
-- **지켜보며 같이 일하기**: 에이전트가 사용자가 이미 열어 둔 앱 안에서 일합니다. 한글·엑셀·파워포인트는 **COM**, 브라우저는 **CDP**를 씁니다. 사용자는 바뀌는 자리를 실시간으로 보며 바로 끼어듭니다 → [docs/WORKFLOW_TIPS.md](docs/WORKFLOW_TIPS.md)
+- **Live mode**: start a local server and you get the draft preview on the left and the evidence pane on the right. When the agent (or you) points at a source location with one command, the right pane jumps there and the matching draft line gets the same number.
+- **Single-file mode**: bundle the current state into **one HTML file**. A reviewer double-clicks it — no server — and clicks lines to see their evidence.
+- **Work while the user watches**: the agent works inside the apps the user already has open — **COM** for HWP/Excel/PowerPoint, **CDP** for the browser. The user sees each change as it happens and can step in at any time → [docs/WORKFLOW_TIPS.md](docs/WORKFLOW_TIPS.md)
+
+> The on-screen labels are currently in Korean (e.g. `근거 1` = "evidence 1", `고른 묶음` = "selected group", `에이전트 커서` = "agent cursor").
+> AGENTS.md and the files in `docs/` are written in Korean with an English summary at the top.
 
 ---
 
-## 1. 빠른 시작 (데모)
+## 1. Quick start (demo)
 
 ```bash
 pip install -r requirements.txt
-python examples/demo/make_demo.py                     # 가상 근거 PDF 2개 + 근거 기록 생성
+python examples/demo/make_demo.py                     # creates 2 sample source PDFs + saved evidence
 python -m evkit.serve --project examples/demo          # → http://127.0.0.1:8765/
-python -m evkit.build_viewer --project examples/demo   # → examples/demo/.evkit/dist/*.html (단일 파일)
+python -m evkit.build_viewer --project examples/demo   # → examples/demo/.evkit/dist/*.html (single file)
 ```
 
-데모 화면에서 해 볼 것
-1. 왼쪽 초안의 줄을 누르면 → 그 줄이 속한 **묶음(○ 항목)** 의 근거가 오른쪽에 모이고, 줄 옆에 `근거 1, 2, …` 번호가 붙습니다.
-2. 오른쪽 위 번호를 누르면 → 그 상자로 이동하고 왼쪽 초안의 해당 줄이 강조됩니다.
-3. 오른쪽 PDF 위에서 **Shift+끌기** → 주황 상자로 "여기"를 표시합니다. 에이전트는 `python -m evkit.point --project … --show-user` 로 그 글과 잘라낸 그림을 읽습니다.
-4. 다른 터미널에서 근거를 찍어 보기:
+Things to try in the demo
+1. Click a line in the draft (left) → the evidence for that line's **group (○ item)** is collected on the right, and the lines get numbers `근거 1, 2, …`.
+2. Click a number at the top right → the pane jumps to that box and the matching draft line is highlighted.
+3. **Shift+drag** on a PDF page (right) → draws an orange "here" box. The agent reads its text and a cropped image with `python -m evkit.point --project … --show-user`.
+4. Point at evidence from another terminal:
    ```bash
-   python -m evkit.point --project examples/demo --msg "폭 기준" "guide|1|para=3.2 Width|[g3-1] 폭 1.8 m 기준"
+   python -m evkit.point --project examples/demo --msg "width rule" "guide|1|para=3.2 Width|[g3-1] 1.8 m width rule"
    ```
 
-## 2. 내 작업에 쓰기
+## 2. Use it for your own work
 
 ```
 my-project/
-├─ project.json          설정 (아래)
-├─ docs/                 근거 PDF (보고서·논문·회의자료… PDF가 아니면 PDF로 내보내서)
-├─ drafts/report.md      초안
-└─ .evkit/               자동 생성: 근거 기록·캐시·단일 파일 결과 (git 에 올리지 말 것)
+├─ project.json          settings (below)
+├─ docs/                 source PDFs (reports, papers, slides… export to PDF if needed)
+├─ drafts/report.md      your draft
+└─ .evkit/               auto-created: saved evidence, cache, single-file output (do not commit)
 ```
 
 **project.json**
 ```json
 {
-  "title": "프로젝트 이름",
+  "title": "Project name",
   "docs": {
-    "spec":  {"name": "사양서 v2", "path": "docs/spec.pdf", "unit": "쪽"},
-    "notes": {"name": "회의록 3월", "path": "docs/notes_0312.pdf", "first_page": 7}
+    "spec":  {"name": "Specification v2", "path": "docs/spec.pdf", "unit": " p"},
+    "notes": {"name": "Meeting notes, March", "path": "docs/notes_0312.pdf", "first_page": 7}
   },
-  "drafts": [{"label": "보고서 초안", "file": "drafts/report.md"}],
+  "drafts": [{"label": "Report draft", "file": "drafts/report.md"}],
   "state_dir": ".evkit",
   "port": 8765,
   "page_dpi": 150,
@@ -63,121 +62,121 @@ my-project/
 }
 ```
 
-| 항목 | 뜻 |
+| Key | Meaning |
 |---|---|
-| `docs.<키>` | 근거 문서. 키는 짧게(`spec`, `notes`, `ref1` …). 명령과 기록에서 이 키로 부름 |
-| `first_page` | 원본에서 일부 쪽만 뽑은 PDF일 때 PDF 1쪽의 원래 쪽 번호. 명령의 쪽 번호는 **원래 쪽 번호**로 씀 |
-| `crop` | (선택) 모든 쪽에서 잘라 보일 범위 `[x0,y0,x1,y1]` (pt) |
-| `skip_line_regex` | 쪽 번호·머리말처럼 상자 계산에서 뺄 줄 |
-| `math` | 초안의 `$수식$` 을 MathJax(CDN)로 표시 |
+| `docs.<key>` | A source document. Keep keys short (`spec`, `notes`, `ref1` …); commands and saved evidence refer to them |
+| `first_page` | If the PDF is an excerpt, the original page number of its first page. Page numbers in commands are **original page numbers** |
+| `crop` | (optional) area to show on every page, `[x0,y0,x1,y1]` in pt |
+| `skip_line_regex` | lines to ignore when computing boxes (page numbers, running headers) |
+| `math` | render `$…$` in drafts with MathJax (CDN) |
 
-`--project` 대신 환경변수 `EVKIT_PROJECT` 를 쓰거나, project.json 이 있는 폴더에서 실행해도 됩니다.
+Instead of `--project` you can set the environment variable `EVKIT_PROJECT`, or run commands from the folder that contains `project.json`.
 
-## 3. 초안 문법
+## 3. Draft syntax
 
 ```markdown
-# 제목
-## 1. 절
-○ 큰 항목 (여기부터 다음 ○ 또는 제목 전까지가 '묶음')
- - 중간 항목 {@k1}
-  · 작은 항목 {@k1-a}
-문단도 됩니다 {@k2}
-| 표 | 칸 |
+# Title
+## 1. Section
+○ Main item (a "group" runs from here to the next ○ or heading)
+ - Sub item {@k1}
+  · Detail {@k1-a}
+Plain paragraphs work too {@k2}
+| Table | Cell |
 |---|---|
-| 값 {@t1} | 값 |
-![그림 캡션](figures/a.png)
-**굵게** {red}빨강{/red} {chg}초록(수정 표시){/chg} {todo}노랑(확인 필요){/todo}
-<!-- 주석: 미리보기에 안 보임 -->
+| value {@t1} | value |
+![Figure caption](figures/a.png)
+**bold** {red}red{/red} {chg}green (changed){/chg} {todo}yellow (needs checking){/todo}
+<!-- comment: hidden in the preview -->
 ```
 
-- 줄 끝 `{@키}` 가 **초안 키** 입니다. 근거 기록의 메모 `"[키] …"` 와 이어집니다.
-- 키는 자유롭게 짓되 **줄마다 하나, 나중에 바꾸지 않게** 붙이세요(바꾸면 근거 연결이 끊김). 예: `y3-a1-2`, `s2.3-p1`.
-- 묶음은 `○`(또는 `■`, `□`) 줄과 제목(`#`~`###`)이 시작합니다.
+- `{@key}` at the end of a line is the **draft key**. It links the line to saved evidence whose note starts with `"[key] …"`.
+- Name keys however you like, but use **one key per line and never rename it** (renaming breaks the link). Examples: `y3-a1-2`, `s2.3-p1`.
+- Groups start at `○` (or `■`, `□`) lines and at headings (`#` to `###`).
 
-## 4. 근거 찍기 (`evkit.point`)
+## 4. Pointing at evidence (`evkit.point`)
 
 ```bash
-python -m evkit.point --project P --msg "설명" "문서키|쪽|위치|[초안키] 메모" ...
+python -m evkit.point --project P --msg "what this shows" "docKey|page|where|[draftKey] note" ...
 ```
 
-| 위치 | 잡히는 범위 |
+| `where` | Box covers |
 |---|---|
-| `find=글자` | 그 글자가 있는 **줄 전체**. `find=A;;B` 는 A·B 줄을 한 상자로 |
-| `para=글자` | 그 글자가 있는 **문단 전체** |
-| `sec=제목글자` | 그 제목부터 같은 단계 다음 제목 전까지 |
-| `fig=캡션글자` | 캡션 위 그림 + 캡션 (벡터 그림도 인식) |
-| `after=글자` / `before=글자` | 그 줄 바로 아래/위 그림·수식 |
-| `word=글자` | 글자 조각만(숫자 하나 콕 집을 때) |
-| `box=x0,y0,x1,y1` | 쪽을 0~1로 본 비율 좌표 |
-| `page` | 쪽 전체 |
+| `find=text` | the **whole line(s)** containing the text. `find=A;;B` joins the A and B lines into one box |
+| `para=text` | the **whole paragraph** containing the text |
+| `sec=heading text` | from that heading to the next heading of the same level |
+| `fig=caption text` | the figure above the caption + the caption (vector drawings included) |
+| `after=text` / `before=text` | the figure/equation right below/above that line |
+| `word=text` | just the matched text (e.g. a single number) |
+| `box=x0,y0,x1,y1` | fractional page coordinates (0–1) |
+| `page` | the whole page |
 
-- `--check` 를 붙이면 `.evkit/check/mark_N.png` 에 상자를 그린 확인 그림이 생깁니다. **상자가 글자 조각만 잡히거나 엉뚱한 곳이면 고쳐서 다시 찍습니다.**
-- `--clear` 지우기, `--show-user` 사람이 그린 주황 상자 읽기.
-- 한 줄(키)에 상자를 여러 개 찍어도 됩니다. 번호는 `#3-1`, `#3-2` 처럼 붙습니다.
+- Add `--check` to write a preview image with the boxes drawn to `.evkit/check/mark_N.png`. **If a box only catches a fragment of text or lands in the wrong place, fix it and point again.**
+- `--clear` removes the current marks; `--show-user` prints the orange boxes the user drew.
+- One line (key) can have several boxes; they are numbered `#3-1`, `#3-2`, …
 
-## 5. 근거 저장·다시 보기 (`evkit.pointer_log`)
+## 5. Saving and replaying evidence (`evkit.pointer_log`)
 
 ```bash
-python -m evkit.pointer_log --project P save 2장_가묶음      # .evkit/history/2장_가묶음.json + .evkit/evidence_log.md
-python -m evkit.pointer_log --project P show 2장_가묶음      # 다시 띄우기
+python -m evkit.pointer_log --project P save ch2_groupA   # .evkit/history/ch2_groupA.json + .evkit/evidence_log.md
+python -m evkit.pointer_log --project P show ch2_groupA   # show it again
 python -m evkit.pointer_log --project P list
 ```
 
-- 묶음 보기(초안에서 줄 클릭)는 **저장된 기록 전체**에서 그 묶음의 키를 모읍니다. 같은 키가 여러 기록에 있으면 **가장 최근 저장분**을 씁니다.
-- 그래서 작업 흐름은 "한 묶음 근거 찍기 → 사람이 확인 → `save`" 를 묶음마다 반복하는 것입니다.
+- The group view (clicking a draft line) collects that group's keys from **all saved records**. If a key appears in several records, the **most recently saved** one wins.
+- So the workflow is: point at one group's evidence → the user checks it → `save`. Repeat per group.
 
-## 6. 화면의 두 가지 보기
+## 6. Two views
 
-| 보기 | 언제 | 번호 |
+| View | When | Numbers |
 |---|---|---|
-| **에이전트 커서** | `point` 로 새로 찍었을 때(자동 전환) | `#1, #2 …` 찍은 순서(키 기준) |
-| **고른 묶음** | 사람이 초안에서 줄을 눌렀을 때 | `근거 1, 2 …` 묶음 안에서 **근거가 있는 줄만** 위에서부터 |
+| **Agent cursor** (`에이전트 커서`) | right after `point` (switches automatically) | `#1, #2 …` in pointing order (per key) |
+| **Selected group** (`고른 묶음`) | when the user clicks a draft line | `근거 1, 2 …` counting only lines **that have evidence**, top to bottom within the group |
 
-초안 화면과 근거 화면은 같은 규칙으로 번호를 매기고, 보기 전환은 서버 한 곳(`/api/mode`)에서 정해 두 화면이 함께 바뀝니다. 같은 문단을 여러 줄이 가리켜 상자가 겹치면 지금 보는 줄의 상자만 진하게 맨 위로 올립니다.
+The draft and evidence panes number things with the same rule, and the view is switched in one place on the server (`/api/mode`) so both panes change together. When several lines point at the same paragraph and boxes overlap, the box for the current line is drawn on top and the others are dimmed.
 
-## 7. 단일 파일 (`evkit.build_viewer`)
+## 7. Single file (`evkit.build_viewer`)
 
 ```bash
-python -m evkit.build_viewer --project P [--out 경로.html] [--dpi 96] [--quality 60]
+python -m evkit.build_viewer --project P [--out path.html] [--dpi 96] [--quality 60]
 ```
 
-- 근거 문서의 모든 쪽을 JPEG로 넣고, 화면 코드는 실시간판을 그대로 씁니다(`web/shim.js` 가 서버 응답을 대신함).
-- 크기 가늠: 96 dpi·품질 60에서 A4 한 쪽 ≈ 100~150 KB. 300쪽이면 40 MB 안팎. 줄이려면 `--dpi`·`--quality` 를 낮추거나 쓰지 않는 문서를 `docs` 에서 빼세요.
-- 스냅샷입니다. 초안이 바뀌면 다시 빌드하세요.
-- 수식(`math: true`)은 MathJax CDN을 쓰므로 받는 쪽에 인터넷이 필요합니다.
+- Every page of every source document is embedded as JPEG, and the screens are the same code as live mode (`web/shim.js` answers the server requests).
+- Size estimate: at 96 dpi / quality 60 an A4 page is about 100–150 KB, so ~300 pages is around 40 MB. Lower `--dpi`/`--quality` or drop unused documents from `docs` to shrink it.
+- It is a snapshot. Rebuild when the draft changes.
+- Math (`math: true`) uses the MathJax CDN, so the reader needs internet access.
 
-## 8. 사람과 에이전트가 같이 쓰는 방법
+## 8. Working together: user + agent
 
-에이전트(Claude, Codex 등)에게 [AGENTS.md](AGENTS.md) 를 읽히세요. 요약하면:
+Give your agent (Claude, Codex, …) [AGENTS.md](AGENTS.md). In short:
 
-1. **원문 문장을 그대로 쓴다.** 에이전트가 새 문장·소제목·표를 만들지 않는다. 꼭 필요한 연결 문장은 표시해 둔다.
-2. **세부 하나까지 근거.** 숫자·기한·상태("진행 중") 같은 세부도 각각 원문 위치에 연결한다.
-3. **말할 때마다 커서를 옮긴다.** 문서 내용을 언급하는 답에는 묻지 않고 `point` 로 그 위치를 찍는다.
-4. **결정은 사람이.** 질문을 결정으로 받아 기록하지 않는다. 결정이 나면 결정 기록에 근거 위치를 같이 적는다.
-5. **묶음 단위로 확인하고 저장한다.**
+1. **Reuse the source wording.** The agent does not invent sentences, headings or tables. Any connecting sentence it must add is marked.
+2. **Every detail gets evidence.** Numbers, dates, status ("in progress") each link to a source location.
+3. **Move the cursor whenever you mention a source.** Any answer that refers to a document also points at it with `point` — without asking first.
+4. **The user decides.** A question is not a decision. When a decision is made, record it together with its evidence.
+5. **Check and save group by group.**
 
-## 9. 그 밖의 문서
+## 9. Other documents
 
-- [AGENTS.md](AGENTS.md) — 에이전트 작업 규칙과 명령 요약(에이전트에게 그대로 주면 됨)
-- [docs/WORKFLOW_TIPS.md](docs/WORKFLOW_TIPS.md) — 작업 방식 팁: 사람이 보는 앱을 에이전트가 직접 다루기(오피스·한글은 **COM**, 브라우저는 **CDP**/헤드리스 Chrome), 결과를 "보이는 모양"으로 확인하기
-- [docs/HWP_COM_NOTES.md](docs/HWP_COM_NOTES.md) — 한글(HWP)·엑셀을 COM으로 자동화할 때 겪은 함정과 해결(Windows)
-- [docs/DATA_FORMATS.md](docs/DATA_FORMATS.md) — 근거 기록·상태 파일·API 형식
+- [AGENTS.md](AGENTS.md) — working rules and command summary for agents (hand it to the agent as is)
+- [docs/WORKFLOW_TIPS.md](docs/WORKFLOW_TIPS.md) — an observable, interactive workspace: the agent works inside the apps the user has open (**COM** for Office/HWP, **CDP**/headless Chrome for the browser) and confirms results by what the user would see
+- [docs/HWP_COM_NOTES.md](docs/HWP_COM_NOTES.md) — pitfalls and fixes when automating HWP (Hangul) and Excel via COM (Windows)
+- [docs/DATA_FORMATS.md](docs/DATA_FORMATS.md) — formats of saved evidence, state files and the API
 
-## 10. 보안·배포 주의
+## 10. Security and sharing
 
-- 서버는 `127.0.0.1` 에서만 열립니다. 프로젝트 폴더 밖 파일은 내주지 않습니다.
-- **단일 파일에는 근거 문서의 쪽 그림이 통째로 들어갑니다.** 내부 자료라면 받을 사람을 정해서 직접 전달하고, 공개 호스팅에 올리지 마세요.
-- 이 저장소에는 도구만 올립니다. 내 프로젝트의 `docs/`, `drafts/`, `.evkit/` 은 올리지 마세요(`.gitignore` 참고).
+- The server listens on `127.0.0.1` only and never serves files outside the project folder.
+- **The single-file viewer contains full page images of your source documents.** If they are internal, send the file to specific people only and do not host it publicly.
+- This repository holds the tool only. Do not commit your project's `docs/`, `drafts/` or `.evkit/` (see `.gitignore`).
 
-## 11. 문제 해결
+## 11. Troubleshooting
 
-| 증상 | 조치 |
+| Symptom | Fix |
 |---|---|
-| 상자가 쪽 전체로 잡힘("글자를 찾지 못해…") | 원문 글자를 그대로(띄어쓰기 포함) 짧게 다시. 줄바꿈에 걸친 글은 한 줄에 있는 부분만 |
-| 상자가 너무 넓음 | `find` 대신 `word`, 또는 더 특정한 글자. 같은 글이 여러 줄에 있으면 그 줄에만 있는 글자로 |
-| 그림이 안 잡힘 | `fig=캡션` 또는 `before=캡션`. 그래도 안 되면 `box=` |
-| 초안·근거 번호가 다름 | 두 화면을 새로고침. 보기 전환은 버튼(서버)을 거쳐야 함 |
-| 단일 파일 오른쪽이 빔 | 브라우저 콘솔 확인. 문서가 너무 크면 `--dpi` 를 낮춰 다시 빌드 |
+| The box covers the whole page ("글자를 찾지 못해…" = text not found) | Use a shorter piece of the exact source text (including spaces). For text that wraps, use the part on one line |
+| The box is too wide | Use `word` instead of `find`, or text that appears only on that line |
+| A figure is not caught | Try `fig=caption` or `before=caption`; otherwise use `box=` |
+| Draft and evidence numbers differ | Reload both panes. Switch views with the buttons (they go through the server) |
+| The right pane of the single file is blank | Check the browser console. If documents are large, rebuild with a lower `--dpi` |
 
 ## License
 
