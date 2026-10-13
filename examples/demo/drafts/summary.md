@@ -17,7 +17,7 @@
 ○ Make the lane permanent, built to the design guide
  - Widen to 1.8 m with a 0.6 m buffer (Guide 3.2) {@g3-1}
  - Add a protected corner at Elm Street (Guide 4.1) {@g3-2}
- - {todo}Parking replacement plan — no source yet{/todo}
+ - {todo}Parking replacement plan — no source yet{/todo} {@g3-3}
 
 | Item | Pilot | Guide |
 |---|---|---|

@@ -6,16 +6,19 @@ html,body{margin:0;height:100%;background:#555;font:12px/1.4 "Malgun Gothic","Ap
 #left,#right{display:flex;flex-direction:column;min-width:0}
 iframe{border:0;flex:1;width:100%;background:#8a8a8a}
 #split{background:#222;cursor:col-resize}
-.bar{background:#2b2b2b;color:#eee;padding:4px 8px;display:flex;gap:8px;align-items:center;height:22px}
+.bar{background:#2b2b2b;color:#eee;padding:4px 8px;display:flex;gap:6px;align-items:center;height:22px;white-space:nowrap;overflow:hidden}
 .bar select,.bar input,.bar button{font:12px inherit}
-.bar input{width:52px}
+/* keep one line: selects shrink with ellipsis, controls never wrap */
+.bar select{flex:0 1 auto;min-width:60px;max-width:100%;text-overflow:ellipsis}
+.bar input{width:44px;flex:none}
+.bar button,.bar span{flex:none;white-space:nowrap}
 .dim{color:#aaa}
 </style></head><body>
 <div id="wrap">
  <div id="left"><div class="bar"><select id="lsel"></select><span class="dim">초안</span></div><iframe id="fl"></iframe></div>
  <div id="split"></div>
- <div id="right"><div class="bar"><select id="rsel"><option value="ptr">근거 화면(커서 따라가기)</option></select>
-   <span>쪽</span><input id="pg" type="number" min="1"/><button id="go">PDF로 보기</button></div><iframe id="fr"></iframe></div>
+ <div id="right"><div class="bar"><select id="rsel"><option value="ptr">근거 화면</option></select>
+   <span>쪽</span><input id="pg" type="number" min="1"/><button id="go" title="고른 PDF를 이 쪽에서 열기">열기</button></div><iframe id="fr"></iframe></div>
 </div>
 <script>
 function get(k,d){try{var v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}}
@@ -27,7 +30,7 @@ fetch("/api/drafts").then(function(r){return r.json();}).then(function(ds){
   lsel.onchange=function(){fl.src="/preview?d="+lsel.value;set("evk-left",lsel.value);};});
 fetch("/api/docs").then(function(r){return r.json();}).then(function(d){
   document.title=d.title+" · 근거 작업 화면";
-  Object.keys(d.docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=d.docs[k].name+" (원본 PDF)";rsel.appendChild(o);});
+  Object.keys(d.docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent="PDF · "+d.docs[k].name.split(" — ")[0];o.title=d.docs[k].name;rsel.appendChild(o);});
   function show(){fr.src=rsel.value==="ptr"?"/pointer":"/doc/"+rsel.value+".pdf#page="+(parseInt(pg.value,10)||1);}
   rsel.onchange=show; document.getElementById("go").onclick=show; show();});
 // 왼쪽(초안) ↔ 오른쪽(근거) 클릭 알림 전달

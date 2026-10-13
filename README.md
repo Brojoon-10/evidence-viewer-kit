@@ -120,10 +120,12 @@ python -m evkit.point --project P --msg "what this shows" "docKey|page|where|[dr
 python -m evkit.pointer_log --project P save ch2_groupA   # .evkit/history/ch2_groupA.json + .evkit/evidence_log.md
 python -m evkit.pointer_log --project P show ch2_groupA   # show it again
 python -m evkit.pointer_log --project P list
+python -m evkit.check --project P                         # every bullet has a key, every key has saved evidence
 ```
 
 - The group view (clicking a draft line) collects that group's keys from **all saved records**. If a key appears in several records, the **most recently saved** one wins.
-- So the workflow is: point at one group's evidence → the user checks it → `save`. Repeat per group.
+- So the workflow is: point at one group's evidence → the user checks it → `save` → `evkit.check`. Repeat per group.
+- `evkit.check` also flags **bullet lines without a `{@key}`**: clicking such a line shows nothing, so every bullet needs a key (use `{todo}` when no source can back it).
 
 ## 6. Two views
 
@@ -131,6 +133,8 @@ python -m evkit.pointer_log --project P list
 |---|---|---|
 | **Agent cursor** (`에이전트 커서`) | right after `point` (switches automatically) | `#1, #2 …` in pointing order (per key) |
 | **Selected group** (`고른 묶음`) | when the user clicks a draft line | `근거 1, 2 …` counting only lines **that have evidence**, top to bottom within the group |
+
+Evidence is drawn as a color fill plus a bar in the margin left of the text, with no top/bottom/right border (those ran over neighbouring text lines); the number lives only on the chip of the same color at the top. Clicking a chip darkens the margin bar of its own box (same color, deeper tone) (so 2-1, 2-2, 2-3 of one key can be told apart) and outlines its draft line. Boxes that touch at an edge are trimmed so they do not overlap.
 
 The draft and evidence panes number things with the same rule, and the view is switched in one place on the server (`/api/mode`) so both panes change together. When several lines point at the same paragraph and boxes overlap, the box for the current line is drawn on top and the others are dimmed.
 
@@ -154,6 +158,7 @@ Give your agent (Claude, Codex, …) [AGENTS.md](AGENTS.md). In short:
 3. **Move the cursor whenever you mention a source.** Any answer that refers to a document also points at it with `point` — without asking first.
 4. **The user decides.** A question is not a decision. When a decision is made, record it together with its evidence.
 5. **Check and save group by group.**
+6. **The draft holds everything; the chat only reports.** Every bullet links to evidence, the agent's `--msg` is a one-line progress note, and the viewer is opened with `python -m evkit.open` (only when none is open). See AGENTS.md §0.
 
 ## 9. Other documents
 

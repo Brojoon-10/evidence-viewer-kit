@@ -116,7 +116,9 @@ CSS = r"""
 :root{--paper:#fff;--ink:#111;--muted:#666;--bg:#8a8a8a}
 html,body{margin:0;background:var(--bg)}
 body{font:14px/1.75 "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:var(--ink)}
-#bar{position:sticky;top:0;z-index:9;background:#2b2b2b;color:#eee;font-size:12px;padding:4px 10px;display:flex;gap:12px;align-items:center}
+#bar{position:sticky;top:0;z-index:9;background:#2b2b2b;color:#eee;font-size:12px;padding:4px 10px;display:flex;gap:12px;align-items:center;white-space:nowrap;overflow:hidden}
+#bar b{display:none} /* title already shown in the outer select */
+#bar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#aaa}
 #bar label{cursor:pointer}
 .paper{background:var(--paper);width:min(820px,94vw);margin:16px auto 40px;padding:36px 70px 48px 48px;box-shadow:0 1px 6px rgba(0,0,0,.4);box-sizing:border-box;position:relative}
 .ln{position:relative;border-radius:3px;padding:0 4px;cursor:pointer}
@@ -142,8 +144,12 @@ body.hide-ev .badge{display:none}
 .ln.has-lab{outline:2px solid var(--lc);outline-offset:1px}
 .ln.has-lab>.lab{display:block;background:var(--lc)}
 td.ln.has-lab>.lab{right:auto;left:100%;margin-left:4px}
-.ln.focus{background:#fff6c7}
 .ln.sel-group{background:#f7f4ff}
+/* the evidence being viewed (chip clicked on the right) must stand out from the rest of its group:
+   declared after .sel-group so it wins, with a thicker, darker outline */
+.ln.focus{background:#fff6c7}
+.ln.has-lab.focus{outline:3px solid color-mix(in srgb,var(--lc) 55%,#000);outline-offset:1px}
+.ln.has-lab.focus>.lab{background:color-mix(in srgb,var(--lc) 55%,#000);color:#fff}
 """
 
 JS = r"""
@@ -204,7 +210,7 @@ def build(project, i=0):
     mj = ('<script>window.MathJax={tex:{inlineMath:[["$","$"]]}};</script>'
           '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>') if math else ""
     return ("<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"/><title>%s</title><style>%s</style>%s</head><body>"
-            "<div id=\"bar\"><b>%s</b><span>줄을 누르면 그 묶음의 근거가 근거 화면에 뜹니다</span>"
+            "<div id=\"bar\"><b>%s</b><span>줄을 누르면 근거가 오른쪽에 뜹니다</span>"
             "<label><input type=\"checkbox\" id=\"hide-ev\"/> 근거 키(◀) 숨기기</label></div>"
             "<div class=\"paper\">%s</div><script>%s</script></body></html>") % (
         html.escape(d.get("label", "초안")), CSS, mj, html.escape(d.get("label", "초안")), body, js)

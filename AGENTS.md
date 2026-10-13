@@ -3,8 +3,32 @@
 > **EN** — Instructions for an AI agent working with a human through evidence-viewer-kit.
 > Core rules: reuse source wording, back every detail with a located source, move the cursor whenever you mention
 > a source, let the human decide, verify and save evidence group by group. Commands are at the bottom.
+> Pipeline (do it every time without being asked): the draft holds everything you want to say; every bullet line
+> has a `{@key}` with saved evidence; point → save → `evkit.check` → open the viewer only if none is open.
 
 이 문서는 사람과 함께 문서를 쓰거나 검토하는 AI 에이전트가 따를 규칙입니다. 프로젝트 지침 파일(CLAUDE.md, AGENTS.md 등)에 그대로 넣거나 링크하세요.
+
+## 0. 협업 파이프라인 — 사람이 매번 말하지 않아도 이 순서로
+
+사람은 화면(왼쪽 초안, 오른쪽 근거)을 보며 일한다. 대화창은 진행 보고용이다.
+
+![이렇게 하세요: 초안 줄을 누르면 그 묶음의 근거가 뜨고, 칩을 누르면 그 근거의 막대만 진해진다](docs/pipeline_example.png)
+
+*이렇게 하세요.* 왼쪽 초안의 줄을 누르면(노란 줄) 오른쪽에 그 묶음의 저장 근거가 모두 뜬다. 한 줄에 근거가 둘이면 `근거 1-1`(본문), `근거 1-2`(그림)로 나뉘고, 누른 칩의 상자만 왼쪽 막대가 진해진다. 근거는 색 채움 + 여백 막대로만 그려 글자를 가리지 않는다.
+
+1. **왼쪽 초안 = 하고 싶은 말 전부.** 설명·정리·주장은 초안 줄로 쓴다. 대화창에 긴 설명을 쌓지 않고 "무엇을 했고 어디를 보면 되는지"만 말한다.
+2. **글머리표 줄은 예외 없이 `{@키}` + 저장 근거.** 사람이 줄(또는 ○ 묶음)을 누르면 근거가 자동으로 떠야 한다. 키 없는 줄은 눌러도 아무것도 안 뜬다.
+   - 일반론 줄("초록은 다섯 박자로 쓴다")도 그 일반론이 이 문서에서 드러나는 자리를 근거로 찍는다.
+   - 이 문서로 보일 수 없는 줄은 키를 달고 `{todo}…{/todo}`.
+3. **커서는 둘이다.** 근거 커서(`고른 묶음`) = 사람이 초안 줄을 눌러 저장 근거를 보는 것. 에이전트 커서 = `point` 로 지금 짚는 곳.
+   내용은 초안과 저장 근거에 둔다. 에이전트 커서의 `--msg` 는 진행 표시 한 줄로만 쓴다(칩 메모는 길면 잘린다).
+4. **찍기 → 저장 → 검사.** `point --check` → 확인 그림 보기 → `pointer_log save <묶음>` → `evkit.check`.
+   `point` 만 하고 `save` 를 빠뜨리면 초안 줄과 연결되지 않는다. `check` 가 "키 없는 줄 0, 근거 없음 0" 이어야 끝이다.
+5. **화면 열기는 `evkit.open`.** 이미 열린 화면이 있으면(최근 폴링) 그대로 두고, 없을 때만 새 창을 연다. 링크만 던지거나 창을 중복으로 열지 않는다.
+   화면 HTML(`web/*.html`, `preview.py`)을 고쳤다면 열린 창은 새로 고침해야 바뀐다고 알린다.
+6. **같이 읽기.** 사람이 "다음" 하면 초안 ○ 묶음 하나씩 에이전트 커서를 옮긴다. 한 번에 하나.
+7. **빠르게.** 묶음별 `point` 명령은 스크립트로 모아 두고(다시 돌릴 수 있게), 경고(종료코드 2)만 골라 고친다. 같은 위치(제목, 초록, 그림)는 변수로 재사용한다.
+8. **화면이 이상하면 재현부터.** 헤드리스 Chrome으로 같은 조작을 하고 캡처해 원인을 확인한 뒤 고친다.
 
 ## 1. 작업 원칙
 
@@ -41,7 +65,8 @@
 
 ```bash
 # 서버(사람이 보는 화면)
-python -m evkit.serve --project P                      # http://127.0.0.1:8765/
+python -m evkit.serve --project P [--port N]           # http://127.0.0.1:8765/ (프로젝트마다 다른 포트 가능)
+python -m evkit.open --project P [--port N]            # 열린 화면이 없을 때만 브라우저 새 창
 
 # 근거 찍기
 python -m evkit.point --project P --msg "무엇을 보여 주는지" \
@@ -52,7 +77,8 @@ python -m evkit.point --project P --show-user           # 사람이 Shift+끌기
 python -m evkit.point --project P --clear
 
 # 저장·다시 보기
-python -m evkit.pointer_log --project P save 이름
+python -m evkit.pointer_log --project P save 이름        # point 다음엔 반드시
+python -m evkit.check --project P                       # 키 없는 줄 / 근거 없는 키 / 칼럼 걸침 / 쪽 전체
 python -m evkit.pointer_log --project P show 이름
 python -m evkit.pointer_log --project P list
 

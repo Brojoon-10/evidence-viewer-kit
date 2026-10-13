@@ -3,25 +3,34 @@
 <style>
 html,body{margin:0;height:100%;font:13px/1.45 "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:#6b6b6b}
 body{display:flex;flex-direction:column}
-#top{flex:none;z-index:5;background:#2b2b2b;color:#eee;padding:5px 8px;max-height:40vh;overflow:auto}
+#top{flex:none;z-index:5;background:#2b2b2b;color:#eee;padding:5px 8px;max-height:40vh;overflow:auto;position:relative;padding-right:30px;min-height:20px} /* min-height keeps the fold button inside when nothing else shows */
+#fold{position:absolute;right:6px;top:4px;background:#444;color:#ddd;border:1px solid #666;border-radius:4px;width:20px;height:20px;line-height:18px;padding:0;text-align:center;cursor:pointer}
+#top.fold > :not(#marks):not(#fold){display:none} /* folded: only the evidence number chips stay */
 #top select,#top button{font:12px inherit}
+#top select{max-width:200px;text-overflow:ellipsis}
 #msg{color:#e8d6ff;font-weight:bold;margin:3px 0}
 #marks{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;padding-bottom:3px}
 #marks a{flex:none;border-radius:10px;padding:1px 10px;cursor:pointer;font-size:14px;font-weight:bold;color:#222;text-decoration:none}
 #marks a.on{outline:2px solid #ffd54a}
-#cur{color:#ffe08a;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#hint{color:#aaa;font-size:11px}
+#cur{color:#ffe08a;font-size:12px;margin-top:2px;white-space:normal;overflow-wrap:anywhere}
+#hint{display:none} /* moved into the clear button tooltip */
 #pages{flex:1;overflow:auto;padding:22px 0 8px 0}
 .pg{position:relative;width:96%;margin:0 auto 10px auto;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.5)}
 .pg img{display:block;width:100%;user-select:none;-webkit-user-drag:none}
 .pg .no{position:absolute;right:4px;top:2px;background:#333;color:#fff;font-size:11px;padding:0 6px;border-radius:3px}
-.box{position:absolute;border:3px solid #7b2fbf;pointer-events:none}
+/* fill + a bar in the margin left of the text. No top/bottom/right border: those run over neighbouring text lines.
+   multiply keeps the text crisp under the color */
+.box{position:absolute;border-style:solid;border-color:var(--c,#7b2fbf);border-width:0 0 0 4px;margin-left:-8px;padding-left:4px;pointer-events:none;mix-blend-mode:multiply}
 .box i{position:absolute;left:-3px;top:-24px;color:#222;font-style:normal;font-size:15px;font-weight:bold;padding:1px 7px;border-radius:3px;white-space:nowrap}
+.box i{display:none} /* labels live only in the header chips; the box color matches its chip */
 .box.flash{animation:fl 1.1s ease-in-out 3}
 @keyframes fl{50%{filter:brightness(.8)}}
 /* 같은 문단을 여러 줄이 가리켜 상자가 겹칠 때: 지금 보는 줄 상자만 진하게 맨 위 */
 .box.dim{opacity:.28}.box.dim i{display:none}
-.box.focus{z-index:4;border-width:4px}
+.box.focus{z-index:4}
+/* among boxes of the same key (2-1, 2-2, 2-3) the clicked chip's own box gets a deeper tone */
+.box.active{z-index:5;border-left-color:color-mix(in srgb,var(--c) 75%,#000)} /* only the bar color changes; fill stays the same */
+.box.hl{border:none;margin-left:0;padding-left:0}
 .ubox{position:absolute;border:2px dashed #ff7a00;background:rgba(255,122,0,.08);pointer-events:none}
 .ubox i{position:absolute;right:-2px;bottom:-20px;background:#ff7a00;color:#fff;font-style:normal;font-size:12px;padding:0 5px;border-radius:3px;white-space:nowrap}
 .drag{position:absolute;border:2px dashed #ff7a00;pointer-events:none}
@@ -29,10 +38,11 @@ body{display:flex;flex-direction:column}
 #modes button.on{background:#ffd54a;color:#222;border-color:#ffd54a;font-weight:bold}
 </style></head><body>
 <div id="top">
+  <button id="fold" title="위쪽 바 접기/펴기">▲</button>
   <span id="modes"><button id="m-group" title="초안에서 누른 줄이 속한 묶음의 근거">고른 묶음</button> <button id="m-agent" title="에이전트(또는 point 명령)가 찍은 근거">에이전트 커서</button></span>
   <select id="doc"></select>
   <select id="hist"><option value="">저장된 근거 기록…</option></select>
-  <button id="uclear" title="내가 그린 주황 상자 모두 지우기">내 표시 지우기</button>
+  <button id="uclear" title="Shift+끌기로 그린 주황 상자(에이전트가 읽음)를 모두 지우기">내 표시 지우기</button>
   <span id="hint">Shift+끌기: 내가 가리키기(에이전트가 읽음)</span>
   <div id="msg"></div>
   <div id="marks"></div>
@@ -71,12 +81,26 @@ function showDoc(doc){
     box.appendChild(pg);}
   overlays();
 }
+// Boxes that touch at an edge (stacked paragraphs) share a thin band; drop that band from both so the borders separate.
+// Only edge bands (< half of each box) are cut, so a box nested inside another is never erased. Display only, data untouched.
+function trimmed(){var L=[],T={};
+  ptr.marks.forEach(function(m){ if(m.doc!==cur||m.style==="hl"||!m.rects)return; var n=m.filepage||fp(m.doc,m.page);
+    m.rects.forEach(function(r,k){L.push({id:m.n+"_"+k,n:n,r:r});T[m.n+"_"+k]=r.slice();});});
+  for(var i=0;i<L.length;i++)for(var j=0;j<L.length;j++){var A=L[i],B=L[j]; if(i===j||A.n!==B.n)continue;
+    var a=A.r,b=B.r, wx=Math.min(a[2],b[2])-Math.max(a[0],b[0]); if(wx<0.5*Math.min(a[2]-a[0],b[2]-b[0]))continue;
+    if(!(a[1]<b[1]&&a[3]>b[1]&&a[3]<b[3]))continue;  // A above B, overlapping at A's bottom edge
+    var ov=a[3]-b[1]; if(ov>=0.5*(a[3]-a[1])||ov>=0.5*(b[3]-b[1]))continue;
+    T[A.id][3]=Math.min(T[A.id][3],b[1]); T[B.id][1]=Math.max(T[B.id][1],a[3]);}
+  return T;}
 function overlays(){
   [].slice.call(document.querySelectorAll(".box,.ubox")).forEach(function(b){b.remove();});
+  var TR=trimmed();
   ptr.marks.forEach(function(m){ if(m.doc!==cur)return; var n=m.filepage||fp(m.doc,m.page), pg=$("p"+n); if(!pg||!m.rects)return;
-    m.rects.forEach(function(r,k){var b=document.createElement("div");b.className="box flash";b.dataset.n=m.n;place(b,m.doc,n,r);
-      var c=col(disp(m)); b.style.borderColor=c; b.style.background=c+"22";
-      if(k===0){var i=document.createElement("i");i.textContent=lab(m);i.style.background=c;b.appendChild(i);} pg.appendChild(b);});});
+    m.rects.forEach(function(r,k){r=TR[m.n+"_"+k]||r;var b=document.createElement("div");b.className="box flash"+(m.style==="hl"?" hl":"");b.dataset.n=m.n;place(b,m.doc,n,r);
+      var c=col(disp(m)); b.style.setProperty("--c",c); b.dataset.c=c; b.dataset.a=(m.style==="hl"?"99":"38"); b.style.background=c+b.dataset.a;
+      if(k===0){var i=document.createElement("i");i.textContent=lab(m);i.style.background=c;b.appendChild(i);} pg.appendChild(b);});
+    (m.hl||[]).forEach(function(r){var h=document.createElement("div");h.className="box hl";h.dataset.n=m.n;place(h,m.doc,n,r);
+      var c=col(disp(m)); h.dataset.c=c; h.dataset.a="99"; h.style.background=c+"99"; pg.appendChild(h);});});
   umarks.forEach(function(u){ if(u.doc!==cur)return; var pg=$("p"+u.filepage); if(!pg)return;
     var b=document.createElement("div");b.className="ubox";place(b,u.doc,u.filepage,u.rect);
     var i=document.createElement("i");i.textContent="사람"+u.id+(u.note?" · "+u.note:"");b.appendChild(i);pg.appendChild(b);});
@@ -88,8 +112,8 @@ function jump(m,quiet){
   go(); setTimeout(go,400); setTimeout(go,1200);
   [].slice.call(document.querySelectorAll("#marks a")).forEach(function(a){a.classList.toggle("on",a.dataset.n==m.n);});
   var fk=keyOf(m), same={}; ptr.marks.forEach(function(x){ if(keyOf(x)===fk){same[x.n]=1;} });
-  [].slice.call(document.querySelectorAll(".box")).forEach(function(b){var f=!!same[b.dataset.n];b.classList.toggle("focus",f);b.classList.toggle("dim",!f);});
-  var d=docs[m.doc]; $("cur").textContent=lab(m)+" · "+(d?d.name:m.doc)+" "+m.page+(d&&d.unit?d.unit:"")+(m.note?" · "+m.note.replace(/^\[[\w.-]+\]\s*/,""):"");
+  [].slice.call(document.querySelectorAll(".box")).forEach(function(b){var f=!!same[b.dataset.n];b.classList.toggle("focus",f);b.classList.toggle("dim",!f);var on=b.dataset.n==m.n&&!!SUB[m.n]; b.classList.toggle("active",on);});
+  var d=docs[m.doc]; $("cur").textContent=lab(m)+" · "+(d?d.name.split(" — ")[0]:m.doc)+" "+m.page+(d&&d.unit?d.unit:"")+(m.note?" · "+m.note.replace(/^\[[\w.-]+\]\s*/,""):"");
   var k=keyOf(m); if(k&&!quiet){try{parent.postMessage({type:"ptr",key:k},"*");}catch(e){}}
 }
 function render(){
@@ -124,6 +148,11 @@ function poll(){
     else if(sel.seq!==selSeq){selSeq=sel.seq; if(sel.mode==="agent"){setMode("agent"); if(cptr.marks.length){jump(cptr.marks[0],true);}} else {loadGroup(sel);}}
   }).catch(function(){});
 }
+// 위쪽 바 접기 (상태는 브라우저에 기억)
+(function(){var t=document.getElementById("top"),b=document.getElementById("fold");
+  function set(f){t.classList.toggle("fold",f);b.textContent=f?"▼":"▲";try{localStorage.setItem("evk_fold",f?"1":"0");}catch(e){}}
+  b.onclick=function(){set(!t.classList.contains("fold"));};
+  try{if(localStorage.getItem("evk_fold")==="1")set(true);}catch(e){}})();
 // 저장된 근거 기록 고르기
 $("hist").onchange=function(){var v=$("hist").value; if(v==="")return;
   fetch("/api/histories?t="+Date.now()).then(function(r){return r.json();}).then(function(H){var h=H[+v]; if(!h)return;
@@ -142,7 +171,7 @@ $("hist").onchange=function(){var v=$("hist").value; if(v==="")return;
   $("uclear").onclick=function(){fetch("/api/user",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"clear"})});};
   if(STATIC){$("uclear").style.display="none";$("hint").style.display="none";}})();
 fetch("/api/docs?t="+Date.now()).then(function(r){return r.json();}).then(function(d){
-  docs=d.docs; Object.keys(docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=docs[k].name;$("doc").appendChild(o);});
+  docs=d.docs; Object.keys(docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=docs[k].name.split(" — ")[0];o.title=docs[k].name;$("doc").appendChild(o);});
   $("doc").onchange=function(){showDoc($("doc").value);};
   fetch("/api/histories?t="+Date.now()).then(function(r){return r.json();}).then(function(H){H.forEach(function(h,i){var o=document.createElement("option");o.value=i;o.textContent=h.name+" ("+h.marks.length+"곳)";$("hist").appendChild(o);});}).catch(function(){});
   showDoc(get("evk-doc","")||Object.keys(docs)[0]); poll(); setInterval(poll,1000);

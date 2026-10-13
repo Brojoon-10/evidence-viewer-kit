@@ -10,6 +10,7 @@
   /api/docs        문서 정보(쪽 수·자르기 범위)
   /api/drafts      초안 목록                 /api/version?d=N  초안 N 수정 시각(자동 새로고침용)
   /api/state       {pointer, select, user, docs_ver}
+  /api/viewers     {age}: 마지막 폴링 후 경과 초 (열린 화면이 있는지 판단, 없으면 null)
   /api/evidence    저장된 근거 기록 전체를 초안 키별로
   /api/histories   저장된 근거 기록 목록
   POST /api/select {group, keys, key, label}   초안에서 줄을 누름 → 묶음 보기
@@ -36,6 +37,9 @@ LOCK = threading.Lock()
 SELECT = {"seq": 0}  # 초안에서 고른 묶음(서버 메모리: 창이 여러 개여도 함께 움직임)
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml",
         ".webp": "image/webp", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
+
+
+LAST_POLL = {"t": None}  # time of the last /api/state poll: an open viewer polls every second
 
 
 def make_handler(P):
@@ -80,7 +84,11 @@ def make_handler(P):
                     self._json([{"label": x.get("label", x["file"]), "i": i} for i, x in enumerate(P.cfg["drafts"])])
                 elif path == "/api/docs":
                     self._json({"title": P.cfg["title"], "docs": P.docs_info()})
+                elif path == "/api/viewers":
+                    t = LAST_POLL["t"]
+                    self._json({"age": None if t is None else round(time.time() - t, 1)})
                 elif path == "/api/state":
+                    LAST_POLL["t"] = time.time()
                     info = P.docs_info()
                     self._json({"pointer": read_json(P.pointer_file, {"seq": 0, "marks": []}),
                                 "user": read_json(P.user_file, {"marks": []}), "select": SELECT,
