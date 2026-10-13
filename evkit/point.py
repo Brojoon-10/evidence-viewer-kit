@@ -14,7 +14,9 @@
   after=글자    그 줄 바로 아래 그림·수식
   before=글자   그 줄 바로 위 그림·수식(그림 제목으로 그림 잡기)
   fig=캡션글자   캡션 위 그림 + 캡션
-  word=글자     찾은 글자 조각만
+  word=글자     찾은 글자 조각만 (상자)
+  hl=구절       하이라이터처럼 글자 위에 색칠 (줄바꿈에 걸치면 조각마다. ;; 로 여러 구절)
+  위치+hl=구절  줄 상자(find/para/sec…) 안에서 핵심 구절만 색칠. 예: find=A;;B+hl=핵심 구절
   box=x0,y0,x1,y1  쪽을 0~1로 본 비율 좌표
   page          쪽 전체
 
@@ -25,6 +27,8 @@ import os
 import re
 import sys
 import time
+
+import pymupdf
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from evkit.project import find_project, read_json, write_json  # noqa: E402
@@ -59,12 +63,13 @@ def page_items(pg, clip, skip):
         if r.width > 20 and r.height > 20 and r.y1 > clip[1] and r.y0 < clip[3]:
             objs.append([r.x0, r.y0, r.x1, r.y1])
     lines.sort(key=lambda x: (round(x["bbox"][1] / 4), x["bbox"][0]))
-    merged = []  # 같은 높이 조각(수식 때문에 끊긴 줄)을 한 줄로
+    merged = []  # 같은 높이 조각(수식 때문에 끊긴 줄)을 한 줄로. 단, 가로로 붙어 있을 때만(2단 논문의 옆 단·세로 워터마크는 합치지 않음)
     for ln in lines:
         if merged:
             p = merged[-1]["bbox"]
             cy = (ln["bbox"][1] + ln["bbox"][3]) / 2
-            if p[1] - 1 <= cy <= p[3] + 1:
+            gap = ln["bbox"][0] - p[2]  # 2단 논문 칼럼 간격은 11pt 이상, 수식으로 끊긴 조각은 몇 pt. 음수(오른쪽 줄이 먼저 온 경우)는 합치지 않음
+            if p[1] - 1 <= cy <= p[3] + 1 and -2 <= gap < 8:
                 merged[-1] = {"bbox": union([p, ln["bbox"]]), "text": merged[-1]["text"] + " " + ln["text"]}
                 continue
         merged.append(ln)
@@ -86,6 +91,29 @@ def lines_hit(pg, lines, needle):
         key = re.sub(r"\s+", "", needle)
         out = [ln for ln in lines if key and key in re.sub(r"\s+", "", ln["text"])]
     return out, hits
+
+
+def two_column(pg):
+    """2단 조판 쪽인지. 가운데를 넘지 않는 긴 줄이 좌·우에 충분히 있으면 2단."""
+    mid = pg.rect.width / 2
+    L = R = 0
+    for b in pg.get_text("dict")["blocks"]:
+        if b["type"] != 0:
+            continue
+        for l in b["lines"]:
+            x0, _, x1, _ = l["bbox"]
+            if x1 - x0 < 60:
+                continue
+            if x1 < mid + 5:
+                L += 1
+            elif x0 > mid - 5:
+                R += 1
+    return L > 8 and R > 8
+
+
+def spans_columns(pg, rect):
+    """2단 쪽에서 상자가 좌·우 칼럼에 모두 걸치면 True (제목·표처럼 원래 넓은 것은 호출 쪽에서 거른다)."""
+    return two_column(pg) and (rect[2] - rect[0]) > 0.6 * pg.rect.width and (rect[3] - rect[1]) > 12
 
 
 HEAD_NUM = re.compile(r"^(\d+(\.\d+)+\.?|\d+\)|[A-Z]\.)\s")
@@ -112,6 +140,16 @@ def locate(pg, clip, where, skip=None):
         return [[x0 * pg.rect.width, y0 * pg.rect.height, x1 * pg.rect.width, y1 * pg.rect.height]], ""
     if kind == "page" or not needle:
         return [list(clip)], ""
+    if kind == "hl":  # 하이라이터: 구절의 글자 조각만(줄바꿈에 걸치면 조각마다). ;; 로 여러 구절
+        rects = []
+        for part in needle.split(";;"):
+            hits = pg.search_for(part, clip=pymupdf.Rect(*clip))
+            if not hits:
+                key = re.sub(r"\s+", "", part)
+                lines_all, _ = page_items(pg, clip, skip)
+                hits = [pymupdf.Rect(*l["bbox"]) for l in lines_all if key and key in re.sub(r"\s+", "", l["text"])]
+            rects += [[h.x0 - 1, h.y0 - 1, h.x1 + 1, h.y1 + 1] for h in hits]
+        return (rects or [list(clip)]), ("" if rects else "글자를 찾지 못해 쪽 전체로 표시함: " + needle)
     hit, raw = [], []
     for part in needle.split(";;"):
         h, r = lines_hit(pg, lines, part)
@@ -123,8 +161,8 @@ def locate(pg, clip, where, skip=None):
         return [list(clip)], "글자를 찾지 못해 쪽 전체로 표시함: " + needle
     if kind == "find":
         r = union([l["bbox"] for l in hit])
-        if len(hit) > 1:
-            r = union([r] + [o for o in objs if o[1] >= r[1] - 2 and o[3] <= r[3] + 2])
+        if len(hit) > 1:  # 줄 사이 그림·수식도 포함. 같은 단(가로로 겹치는 것)만
+            r = union([r] + [o for o in objs if o[1] >= r[1] - 2 and o[3] <= r[3] + 2 and o[2] > r[0] and o[0] < r[2]])
         return [[r[0] - 3, r[1] - 3, r[2] + 3, r[3] + 3]], ""
     if kind == "sec":
         heads = [l for l in hit if level(l["text"]) is not None] or hit
@@ -180,6 +218,8 @@ def main():
     ap.add_argument("--clear", action="store_true")
     ap.add_argument("--check", action="store_true", help="확인용 그림 만들기")
     ap.add_argument("--show-user", action="store_true")
+    ap.add_argument("--append", action="store_true", help="지금 표시를 지우지 않고 뒤에 덧붙임 (묶음을 여러 번에 나눠 찍을 때)")
+    ap.add_argument("--no-page-search", action="store_true", help="글자를 못 찾아도 이웃 쪽을 뒤지지 않음")
     a = ap.parse_args()
     P = find_project(a.project)
 
@@ -193,12 +233,15 @@ def main():
         return
 
     old = read_json(P.pointer_file, {"seq": 0})
-    out = {"seq": old.get("seq", 0) + 1, "time": time.strftime("%H:%M:%S"), "msg": a.msg, "marks": []}
+    out = {"seq": old.get("seq", 0) + 1, "time": time.strftime("%H:%M:%S"), "msg": a.msg or old.get("msg", ""),
+           "marks": list(old.get("marks", [])) if a.append else []}
+    warns = 0
     if not a.clear:
         import pymupdf
         info = P.docs_info()
         skip = re.compile(P.cfg["skip_line_regex"]) if P.cfg.get("skip_line_regex") else None
-        for n, spec in enumerate(a.marks, start=1):
+        for spec in a.marks:
+            n = len(out["marks"]) + 1
             parts = spec.split("|")
             if parts and parts[0] in ("L", "R"):  # 예전 형식(쪽|문서|…) 호환
                 parts = parts[1:]
@@ -209,14 +252,51 @@ def main():
             doc = pymupdf.open(P.doc_path(key))
             pg = doc[fp - 1]
             clip = info[key]["clips"][fp - 1]
+            where = where.replace("+word=", "+hl=")  # +word= 는 +hl= 의 별칭
+            where, _, hl_phrase = where.partition("+hl=")  # "find=…+hl=구절": 줄 상자 + 그 안의 구절 색칠
             rects, warn = locate(pg, clip, where, skip)
+            kind = where.partition("=")[0]
+            # 글자를 못 찾으면 이웃 쪽(±3) → 문서 전체 순으로 찾아 쪽 번호를 보정한다 (쪽 번호 착오가 가장 흔한 실수)
+            if warn.startswith("글자를 찾지 못") and not a.no_page_search and kind in ("find", "para", "word", "hl", "sec", "fig", "after", "before"):
+                order = [fp + d for k in range(1, 4) for d in (k, -k)] + list(range(1, len(doc) + 1))
+                for cand in order:
+                    if cand < 1 or cand > len(doc) or cand == fp or cand in order[:order.index(cand)]:
+                        continue
+                    r2, w2 = locate(doc[cand - 1], info[key]["clips"][cand - 1], where, skip)
+                    if not w2.startswith("글자를 찾지 못"):
+                        print("    쪽 보정: %s쪽에 없어 %s쪽에서 찾음" % (page, P.orig_page(key, cand)))
+                        fp, pg, clip, rects, warn = cand, doc[cand - 1], info[key]["clips"][cand - 1], r2, w2
+                        page = P.orig_page(key, cand)
+                        break
             rects = [[round(max(clip[0], r[0]), 1), round(max(clip[1], r[1]), 1),
                       round(min(clip[2], r[2]), 1), round(min(clip[3], r[3]), 1)] for r in rects]
-            out["marks"].append({"n": n, "doc": key, "page": int(page), "filepage": fp, "rects": rects, "note": note})
+            hl = []
+            if hl_phrase:  # 상자 안에서만 찾는다 (짧은 구절이 상자 밖·다른 줄에 걸리지 않게)
+                u0 = union(rects)
+                hr, hw = locate(pg, [u0[0] - 4, u0[1] - 4, u0[2] + 4, u0[3] + 4], "hl=" + hl_phrase, skip)
+                if hw:
+                    warn = warn or ("하이라이트 구절을 찾지 못함: " + hl_phrase)
+                else:
+                    u = union(rects)
+                    hl = [[round(v, 1) for v in r] for r in hr if r[0] >= u[0] - 4 and r[2] <= u[2] + 4 and r[1] >= u[1] - 4 and r[3] <= u[3] + 4]
+                    if not hl:
+                        warn = warn or "하이라이트 구절이 상자 밖에 있음: " + hl_phrase
+            if not warn and kind in ("find", "para", "word", "hl", "after", "before") and any(spans_columns(pg, r) for r in rects):
+                warn = "상자가 좌·우 칼럼에 모두 걸침. find=글자를 더 길게 하거나 box= 로 좁힐 것"
+            if warn:
+                warns += 1
+            out["marks"].append({"n": n, "doc": key, "page": int(page), "filepage": fp, "rects": rects, "note": note,
+                                 "spec": where + ("+hl=" + hl_phrase if hl_phrase else ""), "warn": warn,
+                                 "style": "hl" if kind == "hl" else "box", "hl": hl})
             print("표시 %d: %s %s쪽 | %s%s" % (n, key, page, where, (" | 주의: " + warn) if warn else ""))
             if a.check:
                 for r in rects:
-                    pg.draw_rect(pymupdf.Rect(*r), color=(0.48, 0.18, 0.75), width=2)
+                    if kind == "hl":
+                        pg.draw_rect(pymupdf.Rect(*r), color=None, fill=(1, 0.85, 0.1), fill_opacity=0.45)
+                    else:
+                        pg.draw_rect(pymupdf.Rect(*r), color=(0.48, 0.18, 0.75), width=2)
+                for r in hl:
+                    pg.draw_rect(pymupdf.Rect(*r), color=None, fill=(1, 0.85, 0.1), fill_opacity=0.45)
                 u = union(rects)
                 view = pymupdf.Rect(clip[0], max(clip[1], u[1] - 60), clip[2], min(clip[3], u[3] + 60))
                 png = os.path.join(P.state, "check", "mark_%d.png" % n)
@@ -224,7 +304,9 @@ def main():
                 print("    확인 그림:", os.path.relpath(png, P.root))
             doc.close()
     write_json(P.pointer_file, out)
-    print("seq", out["seq"])
+    print("seq", out["seq"], ("| 경고 %d건 — 확인 그림을 보고 고칠 것" % warns) if warns else "")
+    if warns:
+        sys.exit(2)
 
 
 if __name__ == "__main__":
