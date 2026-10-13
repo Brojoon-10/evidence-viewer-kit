@@ -33,6 +33,11 @@ fetch("/api/docs").then(function(r){return r.json();}).then(function(d){
   Object.keys(d.docs).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent="PDF · "+d.docs[k].name.split(" — ")[0];o.title=d.docs[k].name;rsel.appendChild(o);});
   function show(){fr.src=rsel.value==="ptr"?"/pointer":"/doc/"+rsel.value+".pdf#page="+(parseInt(pg.value,10)||1);}
   rsel.onchange=show; document.getElementById("go").onclick=show; show();});
+// 창 전체를 다시 여는 경우는 둘뿐: 화면 코드(web/*, preview.py)가 바뀌었을 때(자동), 또는 POST /api/reload(evkit.open --refresh).
+// 근거·초안 변경은 폴링으로 들어오므로 새로 고치지 않는다 — 읽던 자리(스크롤, 고른 칩)를 지키려고.
+var reloadTok=null;
+setInterval(function(){fetch("/api/viewers?t="+Date.now()).then(function(r){return r.json();}).then(function(v){
+  var tok=v.reload+":"+v.code; if(reloadTok===null){reloadTok=tok;} else if(tok!==reloadTok){location.reload();}}).catch(function(){});},1500);
 // 왼쪽(초안) ↔ 오른쪽(근거) 클릭 알림 전달
 window.addEventListener("message",function(e){
   if(e.data&&e.data.type==="ptr"&&e.source===fr.contentWindow){fl.contentWindow.postMessage(e.data,"*");}

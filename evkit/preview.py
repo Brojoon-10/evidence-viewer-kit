@@ -148,8 +148,8 @@ td.ln.has-lab>.lab{right:auto;left:100%;margin-left:4px}
 /* the evidence being viewed (chip clicked on the right) must stand out from the rest of its group:
    declared after .sel-group so it wins, with a thicker, darker outline */
 .ln.focus{background:#fff6c7}
-.ln.has-lab.focus{outline:3px solid color-mix(in srgb,var(--lc) 55%,#000);outline-offset:1px}
-.ln.has-lab.focus>.lab{background:color-mix(in srgb,var(--lc) 55%,#000);color:#fff}
+.ln.has-lab.focus{outline:3px solid color-mix(in srgb,var(--lc) 60%,#fff);outline-offset:1px} /* same color as the highlighter on the right */
+/* the active line's label keeps its pastel chip color: the outline alone marks it, quietly */
 """
 
 JS = r"""

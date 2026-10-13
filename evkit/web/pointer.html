@@ -29,7 +29,9 @@ body{display:flex;flex-direction:column}
 .box.dim{opacity:.28}.box.dim i{display:none}
 .box.focus{z-index:4}
 /* among boxes of the same key (2-1, 2-2, 2-3) the clicked chip's own box gets a deeper tone */
-.box.active{z-index:5;border-left-color:color-mix(in srgb,var(--c) 75%,#000)} /* only the bar color changes; fill stays the same */
+/* clicked chip: its bar takes its own chip color (same as the draft label); every other bar goes light gray (inactive) */
+.box.active{z-index:5;border-left-color:var(--c)}
+.box.off{border-left-color:#dcdcdc} /* only the bar color changes; fill stays the same */
 .box.hl{border:none;margin-left:0;padding-left:0}
 .ubox{position:absolute;border:2px dashed #ff7a00;background:rgba(255,122,0,.08);pointer-events:none}
 .ubox i{position:absolute;right:-2px;bottom:-20px;background:#ff7a00;color:#fff;font-style:normal;font-size:12px;padding:0 5px;border-radius:3px;white-space:nowrap}
@@ -97,7 +99,7 @@ function overlays(){
   var TR=trimmed();
   ptr.marks.forEach(function(m){ if(m.doc!==cur)return; var n=m.filepage||fp(m.doc,m.page), pg=$("p"+n); if(!pg||!m.rects)return;
     m.rects.forEach(function(r,k){r=TR[m.n+"_"+k]||r;var b=document.createElement("div");b.className="box flash"+(m.style==="hl"?" hl":"");b.dataset.n=m.n;place(b,m.doc,n,r);
-      var c=col(disp(m)); b.style.setProperty("--c",c); b.dataset.c=c; b.dataset.a=(m.style==="hl"?"99":"38"); b.style.background=c+b.dataset.a;
+      var c=col(disp(m)); b.style.setProperty("--c",c); b.dataset.c=c; b.dataset.a=(m.style==="hl"?"99":"1c"); b.style.background=c+b.dataset.a;
       if(k===0){var i=document.createElement("i");i.textContent=lab(m);i.style.background=c;b.appendChild(i);} pg.appendChild(b);});
     (m.hl||[]).forEach(function(r){var h=document.createElement("div");h.className="box hl";h.dataset.n=m.n;place(h,m.doc,n,r);
       var c=col(disp(m)); h.dataset.c=c; h.dataset.a="99"; h.style.background=c+"99"; pg.appendChild(h);});});
@@ -112,7 +114,7 @@ function jump(m,quiet){
   go(); setTimeout(go,400); setTimeout(go,1200);
   [].slice.call(document.querySelectorAll("#marks a")).forEach(function(a){a.classList.toggle("on",a.dataset.n==m.n);});
   var fk=keyOf(m), same={}; ptr.marks.forEach(function(x){ if(keyOf(x)===fk){same[x.n]=1;} });
-  [].slice.call(document.querySelectorAll(".box")).forEach(function(b){var f=!!same[b.dataset.n];b.classList.toggle("focus",f);b.classList.toggle("dim",!f);var on=b.dataset.n==m.n&&!!SUB[m.n]; b.classList.toggle("active",on);});
+  [].slice.call(document.querySelectorAll(".box")).forEach(function(b){var f=!!same[b.dataset.n];b.classList.toggle("focus",f);b.classList.toggle("dim",!f);var on=b.dataset.n==m.n; b.classList.toggle("active",on); b.classList.toggle("off",!on);});
   var d=docs[m.doc]; $("cur").textContent=lab(m)+" · "+(d?d.name.split(" — ")[0]:m.doc)+" "+m.page+(d&&d.unit?d.unit:"")+(m.note?" · "+m.note.replace(/^\[[\w.-]+\]\s*/,""):"");
   var k=keyOf(m); if(k&&!quiet){try{parent.postMessage({type:"ptr",key:k},"*");}catch(e){}}
 }

@@ -10,7 +10,8 @@
   /api/docs        문서 정보(쪽 수·자르기 범위)
   /api/drafts      초안 목록                 /api/version?d=N  초안 N 수정 시각(자동 새로고침용)
   /api/state       {pointer, select, user, docs_ver}
-  /api/viewers     {age}: 마지막 폴링 후 경과 초 (열린 화면이 있는지 판단, 없으면 null)
+  /api/viewers     {age, reload, code}: 마지막 폴링 후 경과 초(열린 화면 판단, 없으면 null), 새로 고침 카운터, 화면 코드 수정 시각
+  POST /api/reload 열린 화면을 전부 강제로 새로 고침 (evkit.open --refresh). 화면 코드가 바뀌면 이것 없이도 자동
   /api/evidence    저장된 근거 기록 전체를 초안 키별로
   /api/histories   저장된 근거 기록 목록
   POST /api/select {group, keys, key, label}   초안에서 줄을 누름 → 묶음 보기
@@ -40,6 +41,15 @@ MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif"
 
 
 LAST_POLL = {"t": None}  # time of the last /api/state poll: an open viewer polls every second
+RELOAD = {"n": 0}  # bumped by POST /api/reload; open viewers reload themselves when it changes
+
+
+def code_stamp():
+    """Newest mtime of the screen code (web/*, preview.py). Open viewers reload once when it changes,
+    so editing the screen never needs a manual F5, while evidence/draft updates keep arriving by polling."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    files = [os.path.join(WEB, f) for f in os.listdir(WEB)] + [os.path.join(here, "preview.py")]
+    return int(max(os.path.getmtime(f) for f in files if os.path.isfile(f)))
 
 
 def make_handler(P):
@@ -86,12 +96,12 @@ def make_handler(P):
                     self._json({"title": P.cfg["title"], "docs": P.docs_info()})
                 elif path == "/api/viewers":
                     t = LAST_POLL["t"]
-                    self._json({"age": None if t is None else round(time.time() - t, 1)})
+                    self._json({"age": None if t is None else round(time.time() - t, 1), "reload": RELOAD["n"], "code": code_stamp()})
                 elif path == "/api/state":
                     LAST_POLL["t"] = time.time()
                     info = P.docs_info()
                     self._json({"pointer": read_json(P.pointer_file, {"seq": 0, "marks": []}),
-                                "user": read_json(P.user_file, {"marks": []}), "select": SELECT,
+                                "user": read_json(P.user_file, {"marks": []}), "select": SELECT, "reload": RELOAD["n"],
                                 "docs_ver": "|".join(k + ":" + v["stamp"] for k, v in sorted(info.items()))})
                 elif path == "/api/evidence":
                     self._json(P.evidence_index())
@@ -139,6 +149,10 @@ def make_handler(P):
                         SELECT.update({"seq": seq, "mode": "group", "group": body.get("group"), "keys": body.get("keys") or [],
                                        "key": body.get("key"), "label": body.get("label", ""), "time": now})
                     return self._json({"ok": True})
+                if path == "/api/reload":  # 열린 화면 전부 새로 고침 (evkit.open 이 열린 화면을 발견했을 때)
+                    with LOCK:
+                        RELOAD["n"] += 1
+                    return self._json({"ok": True, "reload": RELOAD["n"]})
                 if path == "/api/mode":
                     with LOCK:
                         SELECT["seq"] = SELECT.get("seq", 0) + 1
